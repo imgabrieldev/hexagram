@@ -1,0 +1,219 @@
+{
+  "$comment": "Facts about each plugin: what it delivers, what it requires on PATH, whether it declares an MCP server and over what transport. Which of those servers THIS machine keeps is not recorded here - it lives in deniedMcpServers in settings.json. See the setup-machine skill.",
+  "plugins": [
+    {
+      "name": "aws-serverless",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "aws-serverless-mcp"
+      ],
+      "delivers": [
+        "skills",
+        "hooks",
+        "mcp"
+      ],
+      "transport": [
+        "stdio"
+      ]
+    },
+    {
+      "name": "claude-code-setup",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills"
+      ]
+    },
+    {
+      "name": "claude-md-management",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills",
+        "commands"
+      ]
+    },
+    {
+      "name": "cloudflare",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "cloudflare-api",
+        "cloudflare-bindings",
+        "cloudflare-builds",
+        "cloudflare-docs",
+        "cloudflare-observability"
+      ],
+      "delivers": [
+        "skills",
+        "commands",
+        "mcp"
+      ],
+      "transport": [
+        "http"
+      ]
+    },
+    {
+      "name": "code-review",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "commands"
+      ]
+    },
+    {
+      "name": "code-simplifier",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "agents"
+      ]
+    },
+    {
+      "name": "deploy-on-aws",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "awsiac",
+        "awsknowledge",
+        "awspricing"
+      ],
+      "delivers": [
+        "skills",
+        "hooks",
+        "mcp"
+      ],
+      "transport": [
+        "http",
+        "stdio"
+      ]
+    },
+    {
+      "name": "feature-dev",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "commands",
+        "agents"
+      ]
+    },
+    {
+      "name": "frontend-design",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills"
+      ]
+    },
+    {
+      "name": "playground",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills"
+      ]
+    },
+    {
+      "name": "postman",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "postman"
+      ],
+      "delivers": [
+        "skills",
+        "commands",
+        "agents",
+        "mcp"
+      ],
+      "transport": [
+        "http"
+      ]
+    },
+    {
+      "name": "pyright-lsp",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "lsp"
+      ],
+      "requires": [
+        "pyright-langserver"
+      ]
+    },
+    {
+      "name": "remember",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills",
+        "commands",
+        "hooks"
+      ]
+    },
+    {
+      "name": "rust-analyzer-lsp",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "lsp"
+      ],
+      "requires": [
+        "rust-analyzer"
+      ]
+    },
+    {
+      "name": "security-guidance",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "hooks"
+      ],
+      "caveat": "needs Python 3.10+; below that its hooks run and the review silently no-ops. Builds a venv on first run (180s), and spawns a hook on every prompt, every file edit and every Bash call"
+    },
+    {
+      "name": "skill-creator",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills"
+      ]
+    },
+    {
+      "name": "stripe",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "stripe"
+      ],
+      "delivers": [
+        "skills",
+        "commands",
+        "agents",
+        "mcp"
+      ],
+      "transport": [
+        "http"
+      ]
+    },
+    {
+      "name": "supabase",
+      "ships_mcp": true,
+      "mcp_servers": [
+        "supabase"
+      ],
+      "delivers": [
+        "skills",
+        "mcp"
+      ],
+      "transport": [
+        "http"
+      ]
+    },
+    {
+      "name": "superpowers",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills",
+        "hooks"
+      ]
+    }
+  ]
+}

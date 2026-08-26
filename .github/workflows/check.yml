@@ -1,0 +1,175 @@
+name: Check
+
+# Runs on every push to main and every pull request, including from forks.
+# Deploys nothing, needs no secret, and is designed so that a fork's PR gets
+# exactly the same verdict the author gets. A check that only runs with a
+# credential does not run where it matters most.
+#
+# Two jobs, on purpose, and the split is the whole design:
+#
+#   lint      Preinstalled tools only — ruby, jq, git, shellcheck. No network
+#             after checkout, no download, nothing to rate-limit. It cannot
+#             flake, so a red `lint` is always a real defect. This is where
+#             every defect that has actually shipped in this repo is caught.
+#
+#   manifest  Installs the claude CLI and validates the two JSON manifests
+#             against the CLI's own schema. It is the only step that touches
+#             the network, so it is the only step that can flake — which is
+#             exactly why it is not in the same job as `lint`.
+#
+# Why the CLI is a SEPARATE job rather than a step: `claude plugin validate`
+# was measured against every defect in this repo's history and caught none of
+# them (see .github/scripts/check-skills.rb for what it misses and why). What
+# it does catch is a misspelt or unrecognized manifest key — `"mantainer"`
+# reports `Unknown field 'mantainer'. Claude Code ignores it at load time`,
+# which jq passes as perfectly valid JSON. That is worth having, and it is not
+# worth letting an npm registry hiccup mark a good commit red.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only, and no secret is referenced anywhere in this file. That is what
+# lets a fork's PR run the identical checks: the default token on a fork PR is
+# read-only anyway, so there is nothing here for it to fail to reach.
+#
+# `pull_request`, never `pull_request_target` — the latter would run this with
+# the base repo's write token against a stranger's code.
+permissions:
+  contents: read
+
+# A superseded check is worth nothing, so cancel it. (The deploy workflows in
+# the author's other repos set cancel-in-progress: false, because a half-applied
+# deploy is worse than a slow one. A half-run linter is just a wasted minute.)
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: skills + tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No setup-ruby, no setup-node, no pip. ubuntu-latest already ships
+      # Ruby 3.2 (Psych in stdlib), jq 1.7 and shellcheck. Deliberately NOT
+      # Python: PyYAML is not in the image, so the Python spelling of the
+      # frontmatter check would cost a `pip install` and a network round trip
+      # to do what the preinstalled Ruby does for nothing.
+      - name: Versions
+        run: |
+          ruby -ryaml -e 'puts "ruby #{RUBY_VERSION} / psych #{Psych::VERSION}"'
+          jq --version
+          shellcheck --version | sed -n 2p
+
+      # Both scripts are runnable by hand, and are meant to be run by hand
+      # before pushing:
+      #     ruby .github/scripts/check-skills.rb
+      #     bash .github/scripts/check-tree.sh
+      # They print plain text locally and GitHub annotations under CI.
+      - name: Skills — frontmatter, names, cross-refs, bash fences
+        run: ruby .github/scripts/check-skills.rb
+
+      - name: Tree — JSON, gitignore, manifest wiring, shellcheck
+        run: bash .github/scripts/check-tree.sh
+
+      # This file is the one thing the checks above never read, and a broken workflow does not
+      # report a broken workflow — it just stops running. Parse every one of them.
+      - name: Workflows parse
+        run: |
+          for f in .github/workflows/*.yml; do
+            ruby -ryaml -e 'YAML.load_file(ARGV[0]); puts "ok   #{ARGV[0]}"' "$f"
+          done
+
+  manifest:
+    name: claude plugin validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # PINNED, and the pin is load-bearing twice over.
+      #
+      # First: `--strict` promotes warnings to errors, and the set of warnings
+      # is whatever the installed CLI happens to emit. On `latest` a new
+      # upstream advisory turns this repo red on a commit that changed nothing.
+      # anthropics/financial-services pins for precisely this reason, with a
+      # note that `plugin validate` accepts a marketplace key in 2.1.143 that
+      # 2.1.140 rejects outright.
+      #
+      # Second: this is the version every claim in these workflows was actually
+      # measured against. Bump it deliberately, in its own commit, and read the
+      # diff in the output.
+      CLAUDE_VERSION: 2.1.243
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache BOTH paths. The binary in ~/.local/bin is a symlink into
+      # ~/.local/share/claude; restore only the first and every later step dies
+      # with exit 127 on a dangling link.
+      - uses: actions/cache@v4
+        id: cli
+        with:
+          path: |
+            ~/.local/bin/claude
+            ~/.local/share/claude
+          key: claude-${{ runner.os }}-${{ env.CLAUDE_VERSION }}
+
+      # The curl installer rather than `npm install -g @anthropic-ai/claude-code`,
+      # on Anthropic's own advice: the npm package fetches its platform-native
+      # runtime in a postinstall optional dependency, and on hosted runners that
+      # fetch intermittently stalls or is skipped — leaving "added 1 package"
+      # and no working binary. Their shared validate-plugins action carries a
+      # three-attempt retry loop to work around it. The installer plus this
+      # cache is the cheaper answer.
+      #
+      # This does pipe a remote script into bash. It is Anthropic's own
+      # installer, pinned to an exact version, and it runs in a throwaway
+      # container with a read-only token and no secrets in scope. If that trade
+      # is unacceptable, swap in the npm install and accept the retries.
+      - name: Install the claude CLI
+        if: steps.cli.outputs.cache-hit != 'true'
+        run: curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_VERSION"
+
+      - name: Put it on PATH
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # No ANTHROPIC_API_KEY, no CLAUDE_CODE_OAUTH_TOKEN, no login. Verified by
+      # running this with an empty HOME and a scrubbed environment: exit 0.
+      #
+      # BOTH invocations are required, and this is the trap. Given a directory,
+      # the CLI picks ONE mode. Because this repo self-hosts its marketplace,
+      # `validate .` finds .claude-plugin/marketplace.json first, takes the
+      # marketplace path, and never descends: with a trailing comma injected
+      # into hooks/hooks.json it still printed "Validation passed". `validate
+      # skills` is a different mode entirely — components — and is the only one
+      # that reads a SKILL.md at all.
+      - name: Validate the manifests
+        run: |
+          set -euo pipefail
+          claude --version
+
+          # ⚠️ `--strict` and this plugin's design are in direct conflict, and the conflict is
+          # deliberate on our side: plugin.json carries NO `version` field so the plugin tracks the
+          # commit SHA and a push IS the release. `--strict` promotes that to an error:
+          #   plugins[0] plugin.json → version: No version specified.
+          # Dropping --strict entirely would also drop the one thing it usefully catches — an
+          # unrecognised manifest key, which plain JSON parsing accepts happily. So keep --strict
+          # and subtract exactly the one warning we chose.
+          for target in . skills; do
+            out="$(claude plugin validate "$target" --strict 2>&1)" || true
+            echo "$out"
+            if echo "$out" | grep -qE '❯ .*→ version: No version specified'; then
+              # The intended warning. Fail only if something ELSE was reported too.
+              n=$(echo "$out" | grep -cE '^\s+❯ ' || true)
+              [ "$n" -le 1 ] || { echo "::error::$target: warnings beyond the intentional missing version"; exit 1; }
+            elif echo "$out" | grep -q '✘'; then
+              echo "::error::$target: validation failed"; exit 1
+            fi
+          done

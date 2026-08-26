@@ -1,0 +1,50 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local / session state — churn, not content
+.remember/
+.superpowers/
+.playwright-mcp/
+*.log
+*.tmp
+*~
+
+# Obsidian per-machine UI state. The rest of .obsidian/ IS committed: it carries
+# the vault's link format, the enabled plugins and the .base boards, which are
+# shared configuration rather than local state.
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+**/.obsidian/cache
+
+# Secrets. A project that deliberately commits its .env (private repo, a stack
+# nobody else could otherwise apply) overrides this line and says why, here.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Claude Code's local permission file. NEVER commit it: allow-rules accumulate by
+# clicking, and a rule that allowlists a command with a token in it puts that token
+# in the repo.
+**/.claude/settings.local.json
+
+# Common build output / deps — trim to the stack once it is chosen
+node_modules/
+/dist/
+/build/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OpenTofu / Terraform. The lock file IS committed; nothing else is.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# NOT ignored: <env>.tfvars is versioned configuration here, because secrets live in the
+# environment or in a parameter store rather than in a tfvars file (see the `terraform` skill).
+# A project that does put secrets in tfvars should add *.tfvars back.
+*.auto.tfvars

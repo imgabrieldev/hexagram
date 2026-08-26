@@ -1,0 +1,17 @@
+{
+  "name": "hexagram",
+  "description": "One house style, installed once per machine instead of copied into every repo: the Deterministic Hexagon, naming, infra, diagrams, testing, and a project scaffold that wires the parts a plugin cannot reach.",
+  "author": {
+    "name": "Gabriel Soares"
+  },
+  "homepage": "https://imgabriel.dev/architecture/",
+  "license": "MIT",
+  "keywords": [
+    "hexagonal-architecture",
+    "ports-and-adapters",
+    "hexagram",
+    "scaffold",
+    "conventions"
+  ],
+  "repository": "https://github.com/imgabrieldev/hexagram"
+}

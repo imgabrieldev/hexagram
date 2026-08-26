@@ -1,0 +1,14 @@
+{
+  "name": "hexagram",
+  "description": "Gabriel's house style for Claude Code",
+  "owner": {
+    "name": "Gabriel Soares"
+  },
+  "plugins": [
+    {
+      "name": "hexagram",
+      "description": "One house style, installed once per machine instead of copied into every repo.",
+      "source": "./"
+    }
+  ]
+}

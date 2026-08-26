@@ -1,0 +1,12 @@
+.DS_Store
+.claude/settings.local.json
+.remember/
+.superpowers/
+.env
+.env.*
+node_modules/
+HANDOFF.md
+/docs/
+
+# runtime logs — the update hook writes one beside itself
+*.log
