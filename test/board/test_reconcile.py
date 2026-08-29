@@ -61,8 +61,11 @@ class DirectionTest(unittest.TestCase):
         return Board.Doc(path="a.md", kind="pitch", title="T", status=status,
                          uuid="u1", body="", data={}, mtime=at(when))
 
-    def card_at(self, when, status):
-        return {"id": "u1", "status": status,
+    # The title matches the doc's on purpose. A real card always has one, and a
+    # fake without it describes a state that cannot exist -- it made every case
+    # here emit a spurious retitle, which is the fake lying rather than the code.
+    def card_at(self, when, status, title="T"):
+        return {"id": "u1", "status": status, "title": title,
                 "updated_at": at(when).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
     def test_a_newer_card_writes_the_file(self):
@@ -74,6 +77,14 @@ class DirectionTest(unittest.TestCase):
     def test_a_newer_file_moves_the_card(self):
         ops = Board.reconcile([self.doc_at(2000, "done")], [self.card_at(1000, "Todo")])
         self.assertEqual(["set_status"], [o.kind for o in ops])
+
+    def test_a_title_that_drifted_from_the_document_is_rewritten(self):
+        # One direction only: the file owns the title, `status:` is the only
+        # field that travels back. Without this an epic label never reaches a
+        # board that already exists.
+        ops = Board.reconcile([self.doc_at(1000, "todo")],
+                              [self.card_at(1000, "Todo", title="renamed in the tool")])
+        self.assertIn("retitle", [o.kind for o in ops])
 
     def test_a_tie_prefers_the_file(self):
         ops = Board.reconcile([self.doc_at(1000, "done")], [self.card_at(1000, "Todo")])

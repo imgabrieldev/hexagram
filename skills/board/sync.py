@@ -381,6 +381,14 @@ def reconcile(docs, cards, columns=None):
             ops.append(Op("create", path=d.path, doc=d))
             continue
 
+        # The title flows one way, file to board, always. `status:` is the ONLY
+        # field that travels back, so a title edited in the tool is not input --
+        # it is drift, and the document wins. Without this an epic label never
+        # reaches a board that already exists, because titles are otherwise only
+        # set at creation.
+        if card.get("title") != d.title:
+            ops.append(Op("retitle", uuid=d.uuid, path=d.path, doc=d))
+
         want = STATUS_TO_KANBAN.get(d.status, "todo")
 
         # Status and column are separate in kanban: setting one does not place
@@ -496,6 +504,10 @@ def _pass(docs_root, board_file, board_name):
             api.run("card", "update", op.uuid, "--status",
                     STATUS_TO_KANBAN.get(op.status, "todo"))
             report.updated += 1
+        elif op.kind == "retitle":
+            api.run("card", "update", op.uuid, "--title", op.doc.title)
+            report.updated += 1
+
         elif op.kind == "move":
             api.run("card", "move", op.uuid, "--column", op.column_id)
             report.moved += 1

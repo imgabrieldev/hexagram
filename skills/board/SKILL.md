@@ -76,6 +76,7 @@ Reports `N created, N updated, N moved, N written`.
 | what it does | when |
 |---|---|
 | creates a card | a document has no `kanban:` key, **or** points at a card that no longer exists |
+| retitles a card | the card's title differs from the document's heading. **One direction only** — `status:` is the sole field that travels back, so a title edited in the tool is drift and the document wins. This is what carries an epic label onto a board that already exists |
 | moves a card | the file's `status:` changed and the file is newer |
 | moves a card **between columns** | the card's column disagrees with its status. In kanban these are separate: setting a status does not place the card, and a board where everything sits in TODO is not a board. **A column with no `default_status` is left alone** — that is somewhere a human parked the card deliberately |
 | writes the file | the card moved and the card is newer |
