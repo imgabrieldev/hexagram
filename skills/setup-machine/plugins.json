@@ -1,5 +1,5 @@
 {
-  "$comment": "Facts about each plugin: what it delivers, what it requires on PATH, whether it declares an MCP server and over what transport. Which of those servers THIS machine keeps is not recorded here - it lives in deniedMcpServers in settings.json. See the setup-machine skill.",
+  "$comment": "Facts about each plugin: what it delivers, what it requires on PATH and the install that provides it, whether it declares an MCP server and over what transport. Which of those servers THIS machine keeps is not recorded here - it lives in deniedMcpServers in settings.json. See the setup-machine skill.",
   "plugins": [
     {
       "name": "aws-serverless",
@@ -104,6 +104,20 @@
       ]
     },
     {
+      "name": "hexagram",
+      "ships_mcp": false,
+      "mcp_servers": [],
+      "delivers": [
+        "skills",
+        "hooks"
+      ],
+      "requires": [
+        "kanban"
+      ],
+      "install": "cargo install kanban-cli kanban-mcp",
+      "caveat": "kanban is needed by the board skill alone - every other skill works without it; see skills/board/install.md"
+    },
+    {
       "name": "playground",
       "ships_mcp": false,
       "mcp_servers": [],
@@ -136,7 +150,9 @@
       ],
       "requires": [
         "pyright-langserver"
-      ]
+      ],
+      "install": "npm install -g pyright",
+      "caveat": "delivers nothing until its binary is on PATH"
     },
     {
       "name": "remember",
@@ -157,7 +173,9 @@
       ],
       "requires": [
         "rust-analyzer"
-      ]
+      ],
+      "install": "brew install rust-analyzer",
+      "caveat": "delivers nothing until its binary is on PATH"
     },
     {
       "name": "security-guidance",
