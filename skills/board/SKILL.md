@@ -48,8 +48,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/board/install.md"
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.py" --init docs .kanban.json Work HEX
 ```
 
-Creates `.kanban.json`, seeds TODO / Doing / Complete with the card prefix set **in the same call**,
-and puts a **WIP limit of 1 on Doing** — see *Doing holds one card* below.
+Creates `.kanban.json` and seeds TODO / Doing / Complete, with the card prefix set **in the same call**.
 
 Cards are created in the column whose `default_status` matches, so the first sync already looks like a
 board rather than one long TODO list.
@@ -123,28 +122,48 @@ priority but **not** the description, so the `Done when` is not in the list. Fil
 `Todo`, then `tool_get_card` the one you want — the description carries the file path and the command
 that proves the slice finished.
 
-## Doing holds one card
+## Doing holds one card — as a policy, not a column cap
 
-`--init` sets a **WIP limit of 1** on the Doing column, and that is the one practice here which is not
-a preference. The Kanban Guide lists controlling work in progress among the mandatory practices —
-*"Kanban system members must explicitly control the number of work items in a workflow from started to
-finished"* — and the personal-kanban literature names what a board without one becomes: *"a prettier
-task list"*, because four cards in Doing is not four tasks, it is four unresolved contexts.
+Limiting work in progress is the one practice here that is not a preference. The Kanban Guide lists
+it among the mandatory practices — *"Kanban system members must explicitly control the number of work
+items in a workflow from started to finished"* — and the personal-kanban literature names what a
+board without one becomes: *"a prettier task list"*, because four cards in Doing is not four tasks,
+it is four unresolved contexts.
 
 One, because the audience is one person. And it is not imported ceremony: every hexagram repo already
-carries the same rule in prose — *frozen scope per checkpoint*, *one green per session*, *one thing at
-a time*. The limit only makes it mechanical, which is the same move the sync already makes for
-`status:`.
+carries the same rule in prose — *frozen scope per checkpoint*, *one green per session*.
 
-The guide leaves the mechanism open — *"any way that Kanban system members deem appropriate"* — so this
-is a default, not a law:
+⚠️ **`--init` does NOT set `--wip-limit` on the column, and that is the second answer rather than the
+first.** Setting it was tried and reverted the same day. A pitch is an **epic** and carries
+`status: active`, which maps to Doing; an epic there is not work in progress — its column reports the
+aggregate of its children — but `kanban` counts cards, not kinds. So the pitch takes the single slot
+permanently, every slice that then wants Doing is **rejected at creation**, and the failure surfaces
+as a mangled message rather than "limit reached". Proved by controlled experiment: with the limit,
+creation fails; `--clear-wip-limit` on the same tree, and it succeeds.
+
+The Guide requires the control and leaves the mechanism open — *"any way that Kanban system members
+deem appropriate"* — so **the limit belongs in your repo's Definition of Workflow as an explicit
+policy**, which is what it actually asks for. A column cap is not available until the tool can tell an
+epic from a task.
+
+If your board has no epics in Doing, set one by hand:
 
 ```bash
-kanban .kanban.json column update "$COLUMN_ID" --clear-wip-limit
+kanban .kanban.json column update "$COLUMN_ID" --wip-limit 1
 ```
 
-⚠️ **It is set at `--init` and never by the sync**, so a limit you changed later is never quietly
-overwritten.
+## Blocked keeps its column, and that is deliberate
+
+`status: blocked` never moves a card. **A Blocked column is a widely-documented anti-pattern**: it
+becomes a dumping ground, items go out of sight and out of mind, and — the argument that settles it —
+it *"artificially allows you to raise your WIP limits and thus defeats the entire point of having
+them"*. The practice instead is to leave the item where it is and mark it, keeping the blockage
+visible inside the stage it happened in.
+
+So a blocked card stays put and reports `Blocked` in its status. ⚠️ **On a board read by columns it
+therefore looks like whatever column it sits in**, and a card blocked before it was ever started is
+indistinguishable from one not yet picked up. Record the reason where a reader will find it — the
+document, or the repo's log — because the board will not carry it.
 
 ## What it will not do
 

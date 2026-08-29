@@ -32,11 +32,10 @@ DONE_WHEN = re.compile(r"^##\s+Done when\s*\n+(.+?)(?=\n##\s|\Z)", re.S | re.M)
 
 INDEX_FILES = ("README.md",)
 
-# The WIP limit set on the Doing column at init. One, because the audience is one
-# person: the personal-kanban recommendation for a single developer is Doing = 1,
-# and every hexagram repo already carries the same rule in prose -- "one thing at
-# a time", "frozen scope per checkpoint". See `board: false` below for the other
-# half of the same idea: what a board must not show.
+# The work-in-progress limit this house keeps: one task in Doing, because the
+# audience is one person. It is NOT applied to the column -- see the long comment
+# in init() for the experiment that showed why -- and lives here so the repo's
+# Definition of Workflow and the tests can name one number instead of three.
 DOING_WIP = 1
 
 # A document opts out of the board with `board: false` in its frontmatter.
@@ -417,23 +416,26 @@ def init(board_file, board_name, prefix):
     api.run("board", "create", "--name", board_name,
             "--card-prefix", prefix, "--with-default-columns")
 
-    # Limiting work in progress is the one Kanban practice that is not optional.
-    # The Kanban Guide makes it mandatory -- "Kanban system members must
-    # explicitly control the number of work items in a workflow from started to
-    # finished" -- and without it a board is, in the words of the personal-kanban
-    # literature, "a prettier task list": four cards in Doing is not four tasks,
-    # it is four unresolved contexts.
+    # ⚠️ NO WIP LIMIT IS SET ON THE COLUMN, AND THAT IS THE SECOND ANSWER TO THIS
+    # QUESTION RATHER THAN THE FIRST. Setting `--wip-limit 1` on Doing was tried
+    # and reverted the same day, because it breaks the sync outright.
     #
-    # DOING_WIP is 1 because the audience is one person. The guide leaves the
-    # mechanism open -- "any way that Kanban system members deem appropriate" --
-    # so this is a default, not a law: `kanban column update <id>
-    # --clear-wip-limit` removes it. It is set HERE, at init, and never by the
-    # sync, so a limit a human changed later is never quietly overwritten.
-    for column in api.run("column", "list", "--board", board_name)["items"]:
-        if str(column.get("default_status")) == "in_progress":
-            api.run("column", "update", column["id"],
-                    "--wip-limit", str(DOING_WIP))
-            break
+    # A pitch is an EPIC, and it carries `status: active`, which maps to Doing. An
+    # epic in Doing is not work in progress -- its column reports the aggregate of
+    # its children -- but kanban-cli counts cards, not kinds. So the pitch takes
+    # the single slot permanently, every slice that then wants Doing is REJECTED
+    # at creation, and the failure surfaces as a mangled error rather than as
+    # "limit reached". Proved by controlled experiment: with the limit, creation
+    # fails; `--clear-wip-limit` on the same tree, and it succeeds.
+    #
+    # The Kanban Guide requires the control and leaves the mechanism open -- "any
+    # way that Kanban system members deem appropriate" -- so the limit lives in
+    # the repo's Definition of Workflow as an explicit policy, which is what the
+    # guide actually asks for. What it cannot be here is a column cap, until the
+    # tool can tell an epic from a task.
+    #
+    # Set one by hand if your board has no epics in Doing:
+    #     kanban <file> column update "$COLUMN_ID" --wip-limit 1
 
 
 def sync(docs_root, board_file, board_name):
