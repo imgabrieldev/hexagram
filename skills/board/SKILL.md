@@ -1,8 +1,7 @@
 ---
 name: board
-disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Glob
-description: Use when you want this repo's pitches and plan slices shown as a kanban board, or when a card was moved and the markdown should catch up. Syncs both directions and leaves the markdown in charge.
+description: Use when picking up work and needing to know which slice is next and what proves it done, after finishing one so the board catches up, when a card was moved and the markdown should follow, or when this repo's pitches and plans should be shown as a kanban board. Syncs both directions and leaves the markdown in charge.
 ---
 
 # board
@@ -11,7 +10,11 @@ Sync this repo's `docs/pitches/`, `docs/plans/` and `docs/superpowers/plans/` on
 Invoked as `/hexagram:board` — plugin skills are namespaced by the plugin they ship in.
 
 This is a **view over the markdown, not a second source of truth**. The files decide; the board
-follows. The one field that travels the other way is `status:`, so that moving a card produces a diff
+follows.
+
+**If you are an agent picking up work**, you do not need this skill to read the board — attach the MCP
+server below and query it. Invoke this skill when the markdown and the board have to be reconciled:
+after you change a `status:`, after a card was moved, or when a document has no card yet. The one field that travels the other way is `status:`, so that moving a card produces a diff
 you can review instead of state stranded in a JSON file.
 
 Step 4 of the loop in the `workflow` skill produces the slices this reads. **The board is optional and
@@ -95,7 +98,7 @@ kanban: 8cabb3d6-…   # the card uuid, written by the sync. Do not edit it.
 
 Pitches keep the `status: active` they already use, which maps to Doing on the board.
 
-## Letting Claude work the board
+## Working the board as an agent
 
 ```bash
 claude mcp add kanban -- kanban-mcp "$PWD/.kanban.json"
