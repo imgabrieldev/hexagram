@@ -98,23 +98,110 @@ module Board
       id
     end
   end
+  Report = Struct.new(:created, :updated, :linked, :written, :orphans, :conflicts,
+                      keyword_init: true)
+
   def self.sync(docs_root:, board_file:, board_name:)
     api = Kanban.new(board_file)
-    scan_pitches(docs_root).each do |doc|
-      next if doc.uuid # already linked; slice 02 handles the rest
+    docs = scan_pitches(docs_root)
+    cards = api.run("card", "list", "--board", board_name).fetch("items")
+    report = Report.new(created: 0, updated: 0, linked: 0, written: 0,
+                        orphans: [], conflicts: [])
 
-      uuid = api.create_card(
-        board: board_name, column: "TODO", title: doc.title,
-        status: STATUS_TO_KANBAN.fetch(doc.status, "todo"),
-        description: doc.path
-      )
-      write_back(doc, "kanban" => uuid)
+    reconcile(docs: docs, cards: cards).each do |op|
+      case op.kind
+      when :create
+        uuid = api.create_card(
+          board: board_name, column: "TODO", title: op.doc.title,
+          status: STATUS_TO_KANBAN.fetch(op.doc.status, "todo"), description: op.doc.path
+        )
+        write_back(op.doc, "kanban" => uuid)
+        report.created += 1
+      when :set_status
+        api.run("card", "update", op.uuid, "--status",
+                STATUS_TO_KANBAN.fetch(op.status, "todo"))
+        report.updated += 1
+      when :orphan   then report.orphans << op.uuid
+      when :conflict then report.conflicts << op.paths
+      end
     end
+
+    report
   end
 
   # Rewrites one file's frontmatter, preserving key order and body.
   def self.write_back(doc, updates)
     data = doc.data.merge(updates)
     File.write(doc.path, Frontmatter.render(data, doc.body))
+  end
+
+  # `card list` returns TitleCase with no separator ("InProgress"); `card get`
+  # and the REST API return snake_case ("in_progress"). Downcasing alone is not
+  # enough -- "inprogress" != "in_progress" -- and getting that wrong makes
+  # every linked card look changed on every run. The underscore has to go too.
+  def self.same_status?(from_card, want)
+    from_card.to_s.downcase.delete("_") == want.to_s.downcase.delete("_")
+  end
+
+  Op = Struct.new(:kind, :path, :paths, :uuid, :status, :doc, keyword_init: true)
+
+  # Pure: (docs, cards) -> [Op]. No IO, no process, no clock.
+  def self.reconcile(docs:, cards:)
+    by_id = cards.each_with_object({}) { |c, h| h[c["id"]] = c }
+    claimed = Hash.new { |h, k| h[k] = [] }
+    docs.each { |d| claimed[d.uuid] << d.path if d.uuid }
+
+    ops = []
+    seen = {}
+
+    docs.each do |d|
+      if d.uuid.nil?
+        ops << Op.new(kind: :create, path: d.path, doc: d)
+        next
+      end
+
+      if claimed[d.uuid].length > 1
+        ops << Op.new(kind: :conflict, uuid: d.uuid, paths: claimed[d.uuid]) unless seen[d.uuid]
+        seen[d.uuid] = true
+        next
+      end
+
+      card = by_id[d.uuid]
+      if card.nil?
+        # The file points at a card that no longer exists -- the board was
+        # deleted, or rebuilt elsewhere. Re-create and overwrite the link. This
+        # is what makes "delete .kanban.json and re-sync" reproduce the board,
+        # which is the whole justification for gitignoring it.
+        ops << Op.new(kind: :create, path: d.path, doc: d)
+        next
+      end
+
+      want = STATUS_TO_KANBAN.fetch(d.status, "todo")
+      next if same_status?(card["status"], want)
+
+      ops << Op.new(kind: :set_status, uuid: d.uuid, status: d.status, path: d.path, doc: d)
+    end
+
+    linked = docs.map(&:uuid).compact
+    cards.reject { |c| linked.include?(c["id"]) }
+         .each { |c| ops << Op.new(kind: :orphan, uuid: c["id"]) }
+
+    ops
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  docs_root, board_file, board_name = ARGV
+  abort "usage: sync.rb <docs-root> <board-file> <board-name>" unless board_name
+
+  begin
+    r = Board.sync(docs_root: docs_root, board_file: board_file, board_name: board_name)
+    puts "#{r.created} created, #{r.updated} updated"
+    r.orphans.each   { |u| warn "orphan card (not deleted): #{u}" }
+    r.conflicts.each { |ps| warn "conflict: #{ps.join(' and ')} claim the same card" }
+    exit(r.conflicts.empty? ? 0 : 1)
+  rescue Board::Kanban::Missing
+    warn "kanban is not on PATH. Install it with: cargo install kanban-cli"
+    exit 127
   end
 end
