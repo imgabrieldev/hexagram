@@ -56,37 +56,6 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(["create"], self.kinds(ops))
 
 
-class LinkTest(unittest.TestCase):
-    def slice_doc(self, uuid):
-        return Board.Doc(path="s.md", kind="slice", title="S", status="todo",
-                         uuid=uuid, body="", data={}, parent_path="p.md")
-
-    # Both cards are in the fake on purpose. An edge needs two live cards, and an
-    # earlier fake that listed only the child described a state that cannot exist
-    # -- it passed while the real sync crashed rebuilding a wiped board.
-    def test_links_a_child_when_the_edge_is_missing(self):
-        ops = Board.reconcile([self.slice_doc("child")],
-                              [{"id": "child", "status": "Todo"},
-                               {"id": "parent", "status": "Todo"}],
-                              parents={"s.md": "parent"}, edges=[])
-        link = next((o for o in ops if o.kind == "link"), None)
-        self.assertIsNotNone(link)
-        self.assertEqual("parent", link.parent_uuid)
-
-    def test_a_child_whose_parent_card_is_gone_is_not_linked(self):
-        ops = Board.reconcile([self.slice_doc("child")],
-                              [{"id": "child", "status": "Todo"}],
-                              parents={"s.md": "vanished"}, edges=[])
-        self.assertIsNone(next((o for o in ops if o.kind == "link"), None))
-
-    def test_does_not_relink_an_existing_edge(self):
-        ops = Board.reconcile([self.slice_doc("child")],
-                              [{"id": "child", "status": "Todo"},
-                               {"id": "parent", "status": "Todo"}],
-                              parents={"s.md": "parent"}, edges=[["parent", "child"]])
-        self.assertIsNone(next((o for o in ops if o.kind == "link"), None))
-
-
 class DirectionTest(unittest.TestCase):
     def doc_at(self, when, status):
         return Board.Doc(path="a.md", kind="pitch", title="T", status=status,

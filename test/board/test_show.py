@@ -26,8 +26,8 @@ class IdentifierTest(unittest.TestCase):
 
 
 class CardBoxTest(unittest.TestCase):
-    def box(self, card, width=32, prefix="HEX", epics=()):
-        return Show.card_box(card, width, prefix, set(epics))
+    def box(self, card, width=32, prefix="HEX"):
+        return Show.card_box(card, width, prefix)
 
     def test_every_line_is_exactly_the_box_width(self):
         # Columns are printed side by side, so one ragged line shears the board.
@@ -42,9 +42,17 @@ class CardBoxTest(unittest.TestCase):
     def test_a_title_with_no_dash_still_renders(self):
         self.assertIn("Something with no dash", "\n".join(self.box(PLAIN)))
 
-    def test_an_epic_is_marked_and_a_task_is_not(self):
-        self.assertIn("EPIC", "\n".join(self.box(CARD, epics=["u1"])))
-        self.assertNotIn("EPIC", "\n".join(self.box(CARD)))
+    def test_an_epic_label_moves_to_the_header(self):
+        # The sync writes "[checkout] Slice 2 — …"; the label belongs beside the
+        # identifier, not eating the first line of the title.
+        labelled = {"id": "u9", "card_number": 2, "title": "[checkout] Slice 2 — Rate limiting"}
+        lines = self.box(labelled)
+        self.assertIn("checkout", lines[1])
+        self.assertNotIn("[checkout]", "\n".join(lines[2:]))
+        self.assertIn("Slice 2", "\n".join(lines))
+
+    def test_a_card_with_no_label_is_unchanged(self):
+        self.assertIn("Checkpoint 1", "\n".join(self.box(CARD)))
 
     def test_a_long_title_does_not_overflow_the_box(self):
         long = {"id": "u3", "card_number": 1,
@@ -52,9 +60,12 @@ class CardBoxTest(unittest.TestCase):
         for line in self.box(long):
             self.assertEqual(len(line), 32)
 
-    def test_a_narrow_box_does_not_crash_on_the_epic_tag(self):
-        # inner width can be smaller than "EPIC"; ljust must not go negative.
-        for line in self.box(CARD, width=Show.MIN_CARD, epics=["u1"]):
+    def test_a_narrow_box_does_not_crash_on_a_long_label(self):
+        # inner width can be smaller than the label; ljust must not go negative
+        # and the label must be clipped rather than shearing the column.
+        wide = {"id": "u8", "card_number": 3,
+                "title": "[a-very-long-epic-label-indeed] Slice — x"}
+        for line in self.box(wide, width=Show.MIN_CARD):
             self.assertEqual(len(line), Show.MIN_CARD)
 
 

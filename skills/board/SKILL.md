@@ -63,14 +63,14 @@ already.
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.py" docs .kanban.json Work
 ```
 
-Reports `N created, N updated, N moved, N written, N linked`.
+Reports `N created, N updated, N moved, N written`.
 
 ### What becomes a card
 
 | document | card |
 |---|---|
-| `docs/pitches/*.md` | a parent card. `README.md` and the `archive/` `future/` subfolders are skipped |
-| `docs/plans/<feature>/slice-*.md` | a child card of that feature's pitch |
+| `docs/pitches/*.md` | **no card.** It is an epic — a grouping, not work — and it reaches the board as a `[label]` on its slices' titles. `README.md` and the `archive/` `future/` subfolders are skipped |
+| `docs/plans/<feature>/slice-*.md` | a card, titled `[epic] Slice 2 — Rate limiting` |
 | `docs/superpowers/plans/*.md` | a **top-level card**, no parent — a superpowers plan is one file with its tasks inside, so there is nothing for it to be a child of. `specs/` next door is not scanned: a spec is a design record, not work with a status |
 
 | what it does | when |
@@ -79,7 +79,6 @@ Reports `N created, N updated, N moved, N written, N linked`.
 | moves a card | the file's `status:` changed and the file is newer |
 | moves a card **between columns** | the card's column disagrees with its status. In kanban these are separate: setting a status does not place the card, and a board where everything sits in TODO is not a board. **A column with no `default_status` is left alone** — that is somewhere a human parked the card deliberately |
 | writes the file | the card moved and the card is newer |
-| links | a slice card is not yet a child of its pitch card |
 
 Orphans and conflicts go to stderr and **nothing is ever deleted**. Two files claiming the same
 `kanban:` uuid is reported and neither is written — copy-pasting a slice is how that happens.
@@ -97,7 +96,37 @@ board: false         # optional. Keeps this document off the board entirely.
 ---
 ```
 
-Pitches keep the `status: active` they already use, which maps to Doing on the board.
+## An epic is a label, not a card
+
+⚠️ **A pitch used to become a card**, carrying `status: active` into Doing, and everything awkward
+about the board came from there: a WIP limit could not be set because the epic held the only slot, the
+renderer needed an `EPIC` badge meaning *"do not read this as work in progress"*, and a repo's
+Definition of Workflow had to write down that the epic does not count. Three patches for one mistake.
+
+An epic is not work. It is a grouping, it already lives in a file, and it stays there. Its slices name
+it in their own titles:
+
+```
+[checkout] Slice 2 — Rate limiting
+```
+
+The label is the **feature directory name** by default — the same name that already joins a pitch to
+its slices. A directory named for a document is often too long to sit in every card title, so the
+pitch can shorten it:
+
+```yaml
+---
+status: active
+epic: checkout       # optional. Defaults to the directory name.
+---
+```
+
+The sync will not apply a label twice, so a title that already carries one is left alone. A slice in a
+directory with no pitch keeps its own title — grouping is optional, and an ungrouped card is not
+broken.
+
+**Card relations are gone with it.** There is no parent to link to, so a sync is now **one pass**
+rather than two: the second existed only because a pass that creates cards cannot also link them.
 
 **`board: false` exists for one shape that otherwise appears twice.** A superpowers plan broken into
 slices is on the board as itself *and* as its eight children, and the duplicate is noise no column
@@ -171,7 +200,7 @@ skill exists to avoid. A test asserts it never calls a writing subcommand.
 `PREFIX-N` appears here and **only** here, for display. Cards are still addressed by uuid everywhere
 else, for the renumbering reason below.
 
-## Doing holds one card — as a policy, not a column cap
+## Doing holds one card
 
 Limiting work in progress is the one practice here that is not a preference. The Kanban Guide lists
 it among the mandatory practices — *"Kanban system members must explicitly control the number of work
@@ -179,26 +208,19 @@ items in a workflow from started to finished"* — and the personal-kanban liter
 board without one becomes: *"a prettier task list"*, because four cards in Doing is not four tasks,
 it is four unresolved contexts.
 
-One, because the audience is one person. And it is not imported ceremony: every hexagram repo already
-carries the same rule in prose — *frozen scope per checkpoint*, *one green per session*.
+`--init` sets `--wip-limit 1` on Doing. One, because the audience is one person.
 
-⚠️ **`--init` does NOT set `--wip-limit` on the column, and that is the second answer rather than the
-first.** Setting it was tried and reverted the same day. A pitch is an **epic** and carries
-`status: active`, which maps to Doing; an epic there is not work in progress — its column reports the
-aggregate of its children — but `kanban` counts cards, not kinds. So the pitch takes the single slot
-permanently, every slice that then wants Doing is **rejected at creation**, and the failure surfaces
-as a mangled message rather than "limit reached". Proved by controlled experiment: with the limit,
-creation fails; `--clear-wip-limit` on the same tree, and it succeeds.
+⚠️ **This was set, reverted, and only works because epics left the board.** While a pitch became a
+card it sat in Doing, `kanban` counts cards rather than kinds, and the epic held the only slot — so
+every task that wanted Doing was rejected at creation. The fix was never a bigger number; it was that
+an epic is not work. With only tasks on the board, the cap means what it says.
 
-The Guide requires the control and leaves the mechanism open — *"any way that Kanban system members
-deem appropriate"* — so **the limit belongs in your repo's Definition of Workflow as an explicit
-policy**, which is what it actually asks for. A column cap is not available until the tool can tell an
-epic from a task.
-
-If your board has no epics in Doing, set one by hand:
+Exceeding it is a real refusal, and the sync now says so instead of printing the tail of a card
+description. The limit is set at init and never by the sync, so one you change later is never quietly
+overwritten:
 
 ```bash
-kanban .kanban.json column update "$COLUMN_ID" --wip-limit 1
+kanban .kanban.json column update "$COLUMN_ID" --clear-wip-limit
 ```
 
 ## Blocked keeps its column, and that is deliberate

@@ -166,16 +166,14 @@ class Doc:
 
 
 class Op:
-    __slots__ = ("kind", "path", "paths", "uuid", "parent_uuid", "status",
-                 "column_id", "doc")
+    __slots__ = ("kind", "path", "paths", "uuid", "status", "column_id", "doc")
 
-    def __init__(self, kind, path=None, paths=None, uuid=None, parent_uuid=None,
+    def __init__(self, kind, path=None, paths=None, uuid=None,
                  status=None, column_id=None, doc=None):
         self.kind = kind
         self.path = path
         self.paths = paths
         self.uuid = uuid
-        self.parent_uuid = parent_uuid
         self.status = status
         self.column_id = column_id
         self.doc = doc
@@ -186,7 +184,6 @@ class Report:
         self.created = 0
         self.updated = 0
         self.moved = 0
-        self.linked = 0
         self.written = 0
         self.orphans = []
         self.conflicts = []
@@ -196,7 +193,6 @@ class Report:
         merged.created = self.created + other.created
         merged.updated = self.updated + other.updated
         merged.moved = self.moved + other.moved
-        merged.linked = self.linked + other.linked
         merged.written = self.written + other.written
         merged.orphans = other.orphans
         merged.conflicts = self.conflicts + [
@@ -222,12 +218,19 @@ class Kanban:
         {success, api_version, data} envelope and one place raises."""
         try:
             proc = subprocess.run(["kanban", self.board_file] + list(args),
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError:
             raise KanbanMissing("kanban is not on PATH")
 
         if proc.returncode != 0:
-            raise KanbanFailed("kanban {} failed".format(" ".join(args)))
+            # ⚠️ stderr used to be discarded and every argument echoed, so a WIP
+            # limit rejection surfaced as `Done when: 429 failed` -- the tail of a
+            # card description, with the actual reason thrown away. It cost an
+            # afternoon. The subcommand is enough to locate the call; the reason
+            # has to come from the binary.
+            reason = proc.stderr.decode("utf-8", "replace").strip()
+            raise KanbanFailed("kanban {} failed{}".format(
+                " ".join(args[:2]), ": " + reason if reason else ""))
 
         payload = json.loads(proc.stdout.decode("utf-8"))
         if not payload.get("success"):
@@ -249,25 +252,58 @@ class Kanban:
 # "Pitches" on the first real repo this ran against. The slice glob never had
 # this problem because it matches slice-*.md.
 #
+# ⚠️ A PITCH NO LONGER BECOMES A CARD, and this is the correction that matters
+# most about this file.
+#
+# It used to, carrying `status: active` into the Doing column, and everything
+# awkward about the board came from there: a WIP limit could not be set because
+# the epic held the only slot, the renderer needed an EPIC badge meaning "do not
+# read this as work in progress", and a repo's Definition of Workflow had to write
+# down that the epic does not count. Three patches for one mistake.
+#
+# An epic is not work. It is a grouping, and it already lives in a file. So it
+# stays there, and a card says which epic it belongs to in its own title:
+#
+#     [checkout] Slice 2 — Rate limiting
+#
+# The board then holds only things that can be in progress, which is what makes
+# the columns mean anything.
+#
 # Root only, deliberately: archive/ and future/ are where a pitch MOVES when it
 # stops being current, so a board of active work should not show them.
-def scan_pitches(root):
-    paths = sorted(glob.glob(os.path.join(root, "pitches", "*.md")))
-    return [Doc.load(p, "pitch") for p in paths
-            if os.path.basename(p) not in INDEX_FILES]
+def epic_labels(root):
+    """-> {feature-directory: label}. The label prefixes its slices' titles.
+
+    The directory name is the join between a pitch and its slices, so it is the
+    default. `epic: checkout` in the pitch's frontmatter overrides it, because a
+    directory named for a document is often too long to sit in every card title.
+    """
+    labels = {}
+    for path in sorted(glob.glob(os.path.join(root, "pitches", "*.md"))):
+        if os.path.basename(path) in INDEX_FILES:
+            continue
+        feature = os.path.basename(path)[:-3]
+        doc = Doc.load(path, "pitch")
+        labels[feature] = str(doc.data.get("epic") or feature).strip()
+    return labels
 
 
 # The glob is slice-*.md, which is what excludes README.md. The plain
 # lexicographic sort is what puts slice-01b between 01 and 02.1 -- do NOT "fix"
 # it with a numeric parse: fractional names are deliberate, and normalising them
 # throws away the record of what actually happened.
-def scan_slices(root):
+def scan_slices(root, labels=None):
+    labels = labels if labels is not None else epic_labels(root)
     docs = []
     for path in sorted(glob.glob(os.path.join(root, "plans", "*", "slice-*.md"))):
         feature = os.path.basename(os.path.dirname(path))
-        pitch = os.path.join(root, "pitches", feature + ".md")
-        docs.append(Doc.load(path, "slice",
-                             parent_path=pitch if os.path.exists(pitch) else None))
+        doc = Doc.load(path, "slice")
+        # A slice in a directory with no pitch keeps its own title. The grouping
+        # is optional; a card without one is not broken, just ungrouped.
+        label = labels.get(feature)
+        if label and not doc.title.startswith("[" + label + "]"):
+            doc.title = "[{}] {}".format(label, doc.title)
+        docs.append(doc)
     return docs
 
 
@@ -312,10 +348,8 @@ def _card_time(card):
         return datetime.fromtimestamp(0, timezone.utc)
 
 
-def reconcile(docs, cards, parents=None, edges=None, columns=None):
+def reconcile(docs, cards, columns=None):
     """Pure: (docs, cards) -> [Op]. No IO, no process, no clock."""
-    parents = parents or {}
-    edges = edges or []
     columns = columns or []
 
     by_id = {c["id"]: c for c in cards}
@@ -370,23 +404,11 @@ def reconcile(docs, cards, parents=None, edges=None, columns=None):
         else:
             ops.append(Op("set_status", uuid=d.uuid, status=d.status, path=d.path, doc=d))
 
-    # BOTH cards have to exist before an edge between them can. After a board is
-    # wiped, every file still carries its old uuid, so without these two guards
-    # this emits a link between two cards that are about to be re-created and
-    # kanban rejects it. The re-created pair links on the second pass.
-    for d in docs:
-        if d.kind != "slice" or not d.uuid or d.uuid not in by_id:
-            continue
-        parent_uuid = parents.get(d.path)
-        if parent_uuid is None or parent_uuid not in by_id:
-            continue
-        if [parent_uuid, d.uuid] in edges:
-            continue
-        ops.append(Op("link", uuid=d.uuid, parent_uuid=parent_uuid, path=d.path))
-
-    linked = {d.uuid for d in docs if d.uuid}
+    # Card relations are gone with the epic card that was their only parent. An
+    # epic groups by naming itself in its slices' titles, which needs no edge.
+    documented = {d.uuid for d in docs if d.uuid}
     for c in cards:
-        if c["id"] not in linked:
+        if c["id"] not in documented:
             ops.append(Op("orphan", uuid=c["id"]))
 
     return ops
@@ -416,64 +438,52 @@ def init(board_file, board_name, prefix):
     api.run("board", "create", "--name", board_name,
             "--card-prefix", prefix, "--with-default-columns")
 
-    # ⚠️ NO WIP LIMIT IS SET ON THE COLUMN, AND THAT IS THE SECOND ANSWER TO THIS
-    # QUESTION RATHER THAN THE FIRST. Setting `--wip-limit 1` on Doing was tried
-    # and reverted the same day, because it breaks the sync outright.
+    # Limiting work in progress is the one Kanban practice that is not optional:
+    # the guide makes it mandatory, and without it a board is "a prettier task
+    # list" -- four cards in Doing is not four tasks, it is four unresolved
+    # contexts.
     #
-    # A pitch is an EPIC, and it carries `status: active`, which maps to Doing. An
-    # epic in Doing is not work in progress -- its column reports the aggregate of
-    # its children -- but kanban-cli counts cards, not kinds. So the pitch takes
-    # the single slot permanently, every slice that then wants Doing is REJECTED
-    # at creation, and the failure surfaces as a mangled error rather than as
-    # "limit reached". Proved by controlled experiment: with the limit, creation
-    # fails; `--clear-wip-limit` on the same tree, and it succeeds.
+    # ⚠️ This was tried, reverted, and only works now because of a THIRD change.
+    # While a pitch became a card it sat in Doing as an epic, kanban counts cards
+    # rather than kinds, and the epic held the only slot -- so every task that
+    # wanted Doing was rejected at creation. The fix was never a bigger limit; it
+    # was that an epic is not work and does not belong in a workflow column at
+    # all. With epics out of the board entirely, Doing holds only things that can
+    # actually be in progress and the cap means what it says.
     #
-    # The Kanban Guide requires the control and leaves the mechanism open -- "any
-    # way that Kanban system members deem appropriate" -- so the limit lives in
-    # the repo's Definition of Workflow as an explicit policy, which is what the
-    # guide actually asks for. What it cannot be here is a column cap, until the
-    # tool can tell an epic from a task.
-    #
-    # Set one by hand if your board has no epics in Doing:
-    #     kanban <file> column update "$COLUMN_ID" --wip-limit 1
+    # Set at init and never by the sync, so a limit changed later is never quietly
+    # overwritten. `--clear-wip-limit` removes it: the guide requires the control
+    # and leaves the mechanism open.
+    for column in api.run("column", "list", "--board", board_name)["items"]:
+        if str(column.get("default_status")) == "in_progress":
+            api.run("column", "update", column["id"],
+                    "--wip-limit", str(DOING_WIP))
+            break
 
 
 def sync(docs_root, board_file, board_name):
-    """A pass that creates cards cannot also link them: the parent's uuid does
-    not exist until its card does. So a first pass that created anything is
-    followed by a second, which sees the uuids the first one wrote."""
-    first = _pass(docs_root, board_file, board_name)
-    if first.created == 0:
-        return first
-    return first.merge(_pass(docs_root, board_file, board_name))
+    """One pass.
+
+    There used to be two: a pass that creates cards cannot also link them,
+    because a parent's uuid does not exist until its card does. Card relations
+    left with the epic card that was their only parent, so the second pass has
+    nothing to do that the first did not.
+    """
+    return _pass(docs_root, board_file, board_name)
 
 
 def _pass(docs_root, board_file, board_name):
     api = Kanban(board_file)
-    docs = (scan_pitches(docs_root) + scan_slices(docs_root)
-            + scan_superpowers_plans(docs_root))
+    # No pitches: an epic is a grouping, not work, and it reaches the board as a
+    # [label] on its slices' titles instead of as a card of its own.
+    docs = scan_slices(docs_root) + scan_superpowers_plans(docs_root)
     # Applied here rather than in each scanner: it holds for every kind.
     docs = [d for d in docs if on_board(d)]
     cards = api.run("card", "list", "--board", board_name)["items"]
     columns = api.run("column", "list", "--board", board_name)["items"]
     report = Report()
 
-    by_path = {d.path: d.uuid for d in docs}
-    parents = {d.path: by_path[d.parent_path] for d in docs
-               if d.parent_path and d.parent_path in by_path}
-
-    # Only ask about parents whose card actually exists. A file can point at a
-    # uuid that is gone, and `relation children` on a missing card is an error,
-    # not an empty list -- unguarded it aborts the sync before reconcile can
-    # re-create anything, which is the case reconcile exists to handle.
-    live = {c["id"] for c in cards}
-    edges = []
-    for pitch in docs:
-        if pitch.kind == "pitch" and pitch.uuid in live:
-            for child in api.run("relation", "children", pitch.uuid):
-                edges.append([pitch.uuid, child["id"]])
-
-    for op in reconcile(docs, cards, parents, edges, columns):
+    for op in reconcile(docs, cards, columns):
         if op.kind == "create":
             want = STATUS_TO_KANBAN.get(op.doc.status, "todo")
             home = next((c for c in columns
@@ -492,11 +502,6 @@ def _pass(docs_root, board_file, board_name):
         elif op.kind == "write_file":
             write_back(op.doc, {"status": op.status})
             report.written += 1
-        elif op.kind == "link":
-            # relation add takes POSITIONAL <PARENT> <CHILDREN>... The upstream
-            # README documents --parent/--child; those flags do not exist.
-            api.run("relation", "add", op.parent_uuid, op.uuid)
-            report.linked += 1
         elif op.kind == "orphan":
             report.orphans.append(op.uuid)
         elif op.kind == "conflict":
@@ -523,8 +528,8 @@ def main(argv):
         if do_init:
             init(board_file, board_name, prefix)
         r = sync(docs_root, board_file, board_name)
-        print("{} created, {} updated, {} moved, {} written, {} linked".format(
-            r.created, r.updated, r.moved, r.written, r.linked))
+        print("{} created, {} updated, {} moved, {} written".format(
+            r.created, r.updated, r.moved, r.written))
         for uuid in r.orphans:
             sys.stderr.write("orphan card (not deleted): {}\n".format(uuid))
         for paths in r.conflicts:

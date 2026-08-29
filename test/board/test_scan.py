@@ -38,7 +38,7 @@ class SliceScanTest(TreeCase):
         s = [d for d in Board.scan_slices(self.docs) if d.path.endswith("slice-01-a.md")][0]
         self.assertEqual("todo", s.status)
         self.assertIsNone(s.uuid)
-        self.assertEqual("Slice 01 — A", s.title)
+        self.assertEqual("[board] Slice 01 — A", s.title)
 
     def test_readme_is_not_a_slice(self):
         self.assertFalse(any(d.path.endswith("README.md") for d in Board.scan_slices(self.docs)))
@@ -47,9 +47,31 @@ class SliceScanTest(TreeCase):
         names = [os.path.basename(d.path) for d in Board.scan_slices(self.docs)]
         self.assertEqual(["slice-01-a.md", "slice-01b-b.md", "slice-02.1-c.md"], names)
 
-    def test_parent_resolves_to_the_pitch_of_the_same_name(self):
+    def test_the_epic_label_prefixes_the_title(self):
+        # The pitch of the same name as the directory is the epic, and it reaches
+        # the board here rather than as a card of its own.
         s = Board.scan_slices(self.docs)[0]
-        self.assertEqual(os.path.join(self.docs, "pitches", "board.md"), s.parent_path)
+        self.assertTrue(s.title.startswith("[board] "), s.title)
+
+    def test_a_slice_with_no_pitch_keeps_its_own_title(self):
+        os.makedirs(os.path.join(self.docs, "plans", "orphan"))
+        self.write(("plans", "orphan", "slice-1-x.md"), "---\nstatus: todo\n---\n\n# Lone slice\n")
+        s = [d for d in Board.scan_slices(self.docs) if "orphan" in d.path][0]
+        self.assertEqual("Lone slice", s.title)
+
+    def test_the_label_is_not_applied_twice(self):
+        # scan runs on every sync; a title already carrying its label must not
+        # grow another one.
+        once = Board.scan_slices(self.docs)[0].title
+        twice = Board.scan_slices(self.docs)[0].title
+        self.assertEqual(once, twice)
+        self.assertEqual(1, once.count("[board]"))
+
+    def test_a_pitch_can_shorten_its_label(self):
+        self.write(("pitches", "board.md"),
+                   "---\nstatus: active\nepic: brd\n---\n\n# Pitch — Board\n")
+        s = Board.scan_slices(self.docs)[0]
+        self.assertTrue(s.title.startswith("[brd] "), s.title)
 
     def test_done_when_becomes_part_of_the_description(self):
         s = [d for d in Board.scan_slices(self.docs) if d.path.endswith("slice-01-a.md")][0]
@@ -58,15 +80,21 @@ class SliceScanTest(TreeCase):
         self.assertIn("slice-01-a.md", desc)
 
 
-class PitchScanTest(TreeCase):
-    def test_readme_is_not_a_pitch(self):
+class EpicLabelTest(TreeCase):
+    def test_readme_is_not_an_epic_and_archive_is_not_scanned(self):
         self.write(("pitches", "README.md"), "# Pitches\n\nWhat this folder is for.\n")
         self.write(("pitches", "real.md"), "---\nstatus: active\n---\n\n# Real\n")
         self.write(("pitches", "archive", "old.md"), "---\nstatus: done\n---\n\n# Old\n")
 
-        names = [os.path.basename(d.path) for d in Board.scan_pitches(self.docs)]
+        self.assertEqual({"real": "real"}, Board.epic_labels(self.docs))
 
-        self.assertEqual(["real.md"], names)
+    def test_the_directory_name_is_the_default_label(self):
+        self.write(("pitches", "checkout-flow.md"), "---\nstatus: active\n---\n\n# A long pitch title\n")
+        self.assertEqual("checkout-flow", Board.epic_labels(self.docs)["checkout-flow"])
+
+    def test_frontmatter_overrides_it(self):
+        self.write(("pitches", "checkout-flow.md"), "---\nstatus: active\nepic: checkout\n---\n\n# A long pitch title\n")
+        self.assertEqual("checkout", Board.epic_labels(self.docs)["checkout-flow"])
 
 
 class SuperpowersPlanScanTest(TreeCase):

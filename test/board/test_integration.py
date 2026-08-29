@@ -39,36 +39,66 @@ class IntegrationCase(unittest.TestCase):
 
 
 class SmokeTest(IntegrationCase):
-    def test_a_pitch_becomes_a_card_and_gets_its_uuid_back(self):
-        pitch = self.write(("pitches", "thing.md"),
-                           "---\nstatus: active\n---\n\n# Pitch — Thing\n\nbody\n")
+    def test_a_slice_becomes_a_card_and_gets_its_uuid_back(self):
+        self.write(("pitches", "thing.md"), "---\nstatus: active\n---\n\n# Pitch — Thing\n")
+        slice_ = self.write(("plans", "thing", "slice-01-a.md"),
+                            "---\nstatus: todo\n---\n\n# Slice 01\n")
+        Board.init(self.board, "Work", "HEX")
+
+        Board.sync(self.docs, self.board, "Work")
+
+        with open(slice_, encoding="utf-8") as fh:
+            data, _ = Board.Frontmatter.parse(fh.read())
+        self.assertIsNotNone(data.get("kanban"))
+        items = cards(self.board, "Work")
+        self.assertEqual(1, len(items), "the pitch is an epic and gets no card")
+        self.assertEqual("[thing] Slice 01", items[0]["title"])
+        self.assertEqual(data["kanban"], items[0]["id"])
+
+    def test_a_pitch_gets_no_card_and_no_uuid(self):
+        # An epic is a grouping, not work. It stays in its file.
+        pitch = self.write(("pitches", "thing.md"), "---\nstatus: active\n---\n\n# Pitch — Thing\n")
         Board.init(self.board, "Work", "HEX")
 
         Board.sync(self.docs, self.board, "Work")
 
         with open(pitch, encoding="utf-8") as fh:
             data, _ = Board.Frontmatter.parse(fh.read())
-        self.assertIsNotNone(data.get("kanban"))
-        items = cards(self.board, "Work")
-        self.assertEqual(1, len(items))
-        self.assertEqual("Pitch — Thing", items[0]["title"])
-        self.assertEqual(data["kanban"], items[0]["id"])
+        self.assertIsNone(data.get("kanban"))
+        self.assertEqual([], cards(self.board, "Work"))
 
 
-class SinglePassLinkTest(IntegrationCase):
-    def test_one_sync_creates_cards_and_links_them(self):
+class SinglePassTest(IntegrationCase):
+    def test_one_sync_creates_every_card_and_the_next_is_a_no_op(self):
         self.write(("pitches", "alpha.md"), "---\nstatus: active\n---\n\n# Alpha\n")
         self.write(("plans", "alpha", "slice-01-a.md"), "# Slice 01\n")
+        self.write(("plans", "alpha", "slice-02-b.md"), "# Slice 02\n")
         Board.init(self.board, "Work", "HEX")
 
         r = Board.sync(self.docs, self.board, "Work")
 
-        self.assertEqual(2, r.created)
-        self.assertEqual(1, r.linked, "a single sync must link, not need a second run")
+        self.assertEqual(2, r.created, "two slices, and no card for the epic")
 
         again = Board.sync(self.docs, self.board, "Work")
-        self.assertEqual(0, again.created)
-        self.assertEqual(0, again.linked)
+        self.assertEqual(0, again.created, "a second run must change nothing")
+        self.assertEqual(0, again.updated)
+        self.assertEqual(0, again.moved)
+
+    def test_a_second_task_in_doing_is_refused_by_the_wip_limit(self):
+        # The limit is a real column cap again, and it can be because the epic is
+        # no longer holding the only slot.
+        self.write(("pitches", "alpha.md"), "---\nstatus: active\n---\n\n# Alpha\n")
+        self.write(("plans", "alpha", "slice-01-a.md"), "---\nstatus: doing\n---\n\n# Slice 01\n")
+        Board.init(self.board, "Work", "HEX")
+        Board.sync(self.docs, self.board, "Work")
+        self.assertEqual(1, len(cards(self.board, "Work")))
+
+        self.write(("plans", "alpha", "slice-02-b.md"), "---\nstatus: doing\n---\n\n# Slice 02\n")
+        with self.assertRaises(Board.KanbanFailed) as caught:
+            Board.sync(self.docs, self.board, "Work")
+        # ⚠️ The reason must reach the message. It used to be swallowed, and the
+        # rejection surfaced as the tail of a card description.
+        self.assertIn("card create", str(caught.exception))
 
 
 class RebuildTest(IntegrationCase):
@@ -82,12 +112,11 @@ class RebuildTest(IntegrationCase):
         Board.init(self.board, "W", "HEX")
         r = Board.sync(self.docs, self.board, "W")
 
-        self.assertEqual(2, r.created, "a wiped board must be re-created from the files")
-        self.assertEqual(1, r.linked)
+        self.assertEqual(1, r.created, "a wiped board must be re-created from the files")
         by_title = {c["title"]: Board.canonical_status(c["status"])
                     for c in cards(self.board, "W")}
-        self.assertEqual("done", by_title["Slice 01"], "status must survive the rebuild")
-        self.assertEqual("in_progress", by_title["Alpha"])
+        self.assertEqual("done", by_title["[alpha] Slice 01"],
+                         "status must survive the rebuild")
 
 
 class PrefixTest(IntegrationCase):

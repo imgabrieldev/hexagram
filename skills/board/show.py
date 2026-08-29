@@ -54,16 +54,17 @@ def identifier(prefix, card):
     return "{}-{}".format(prefix, number) if prefix else str(number)
 
 
-def card_box(card, width, prefix, epics):
+def card_box(card, width, prefix):
     inner = width - 4
-    ident = identifier(prefix, card)
-    # An epic is a container: its column reports the aggregate of its children
-    # rather than its own work. Unmarked, a Doing holding one epic and one task
-    # reads as two things in progress, which is the opposite of what it means.
-    tag = "EPIC" if card["id"] in epics else ""
-    head = ident.ljust(max(0, inner - len(tag))) + tag
-
+    # The epic, if the card has one, is a [label] the sync put at the front of the
+    # title. It moves to the header line beside the identifier, where it groups by
+    # eye without eating the title's first line.
     title = card["title"]
+    tag = ""
+    if title.startswith("[") and "] " in title:
+        tag, title = title[1:title.index("] ")], title[title.index("] ") + 2:]
+    head = identifier(prefix, card).ljust(max(0, inner - len(tag))) + tag[:inner]
+
     # Hexagram titles tend to read "Checkpoint 1 — Scaffold, …". Splitting on the
     # em dash gives a heading and a body, which scans better than wrapping the
     # whole string as one paragraph. Titles without one simply wrap.
@@ -98,13 +99,6 @@ def render(api, board_name):
     for group in by_column.values():
         group.sort(key=lambda c: c["card_number"])  # board-id-ok: ordering only
 
-    # There is no `relation list` on the shipped CLI — children are asked for one
-    # card at a time. Verified against the binary, not read from docs.
-    epics = set()
-    for card in cards:
-        if api("relation", "children", card["id"]):
-            epics.add(card["id"])
-
     ordered = sorted(columns, key=lambda c: ORDER.index(c["name"])
                      if c["name"] in ORDER else len(ORDER))
 
@@ -118,7 +112,7 @@ def render(api, board_name):
         if not group:
             lines += ["", "  (empty)"]
         for card in group:
-            lines += card_box(card, width, board.get("card_prefix"), epics)
+            lines += card_box(card, width, board.get("card_prefix"))
         blocks.append(lines)
 
     tall = max(len(b) for b in blocks)
