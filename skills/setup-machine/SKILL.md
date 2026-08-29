@@ -10,8 +10,8 @@ Bring a machine up to the house plugin set. **Report before changing, and change
 not asked for.** Run on a machine that is already set up, this must be a no-op that prints a diff.
 
 The set lives in `plugins.json` beside this file. **Edit that, not this.** It records facts about
-each plugin: what it `delivers`, what it `requires` on PATH, whether it `ships_mcp` and over what
-`transport`, and any `caveat` that cannot be checked.
+each plugin: what it `delivers`, what it `requires` on PATH and the `install` that provides it,
+whether it `ships_mcp` and over what `transport`, and any `caveat` that cannot be checked.
 
 ## The one decision this skill exists to make
 
@@ -79,7 +79,7 @@ m = json.load(open(sys.argv[1]))
 for p in m["plugins"]:
     miss = [b for b in p.get("requires", []) if not shutil.which(b)]
     line = f"{p['name']:24} {','.join(p.get('delivers', ['?'])):28}"
-    if miss:            line += f"MISSING {','.join(miss)} — installs but stays inert"
+    if miss:            line += f"MISSING {','.join(miss)} — fix: {p.get('install', '(none recorded)')}"
     if p.get("caveat"): line += f"  [{p['caveat']}]"
     print(line)
 print(f"\n{len(m['plugins'])} plugins, "
@@ -91,7 +91,9 @@ PY
 Then say out loud, in one line each:
 
 - **which register hooks.** A hook runs on every session whether or not anyone invokes the plugin.
-- **which are inert here**, and the binary each is waiting for.
+- **which are missing a binary**, what each is waiting for, and what that actually costs. It is not
+  the same everywhere: an LSP plugin with no language server delivers nothing at all, while
+  `hexagram` loses exactly one skill and keeps the other fifteen. The `caveat` says which.
 - **any `caveat`.** These are costs that cannot be checked, only stated — `security-guidance` is the
   one to read aloud: it builds a Python venv on first run (180s timeout), and spawns a hook process
   on every prompt, every file edit, and every Bash call. Worth having; not worth discovering by
@@ -235,8 +237,10 @@ silently stays on. Read `plugin.json`'s `mcpServers` field, not a root `.mcp.jso
 declares its server at `./agents/claude/.mcp.json`, and a root-only check finds nothing and reports a
 strip that never happened.
 
-⚠️ **`requires` and `caveat` cannot be derived** and are kept by hand. `requires` holds binary names
-a `which` can test. `caveat` holds a cost that cannot be tested — a version floor, a runtime
+⚠️ **`requires`, `install` and `caveat` cannot be derived** and are kept by hand. `requires` holds
+binary names a `which` can test. `install` holds the command that provides them, so that a missing
+binary is reported with its fix attached rather than as a dead end — measure it against the machine
+before recording it, the way the two LSP entries were resolved through their symlinks. `caveat` holds a cost that cannot be tested — a version floor, a runtime
 expense — and is printed in step 2 rather than checked, because a check that cannot fail correctly is
 worse than an honest sentence.
 
