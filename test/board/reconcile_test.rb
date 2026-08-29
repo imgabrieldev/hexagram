@@ -66,10 +66,14 @@ class LinkTest < Minitest::Test
                    uuid: uuid, body: "", data: {}, parent_path: "p.md")
   end
 
+  # Both cards are in the fake on purpose. An edge needs two live cards, and an
+  # earlier fake that listed only the child described a state that cannot exist
+  # -- it passed while the real sync crashed rebuilding a wiped board.
   def test_links_a_child_to_its_parent_when_the_edge_is_missing
     ops = Board.reconcile(
       docs: [slice(uuid: "child")],
-      cards: [{ "id" => "child", "status" => "Todo" }],
+      cards: [{ "id" => "child", "status" => "Todo" },
+              { "id" => "parent", "status" => "Todo" }],
       parents: { "s.md" => "parent" }, edges: []
     )
     link = ops.find { |o| o.kind == :link }
@@ -78,10 +82,20 @@ class LinkTest < Minitest::Test
     assert_equal "child", link.uuid
   end
 
-  def test_does_not_relink_an_edge_that_already_exists
+  def test_a_child_whose_parent_card_is_gone_is_not_linked
     ops = Board.reconcile(
       docs: [slice(uuid: "child")],
       cards: [{ "id" => "child", "status" => "Todo" }],
+      parents: { "s.md" => "vanished" }, edges: []
+    )
+    assert_nil ops.find { |o| o.kind == :link }
+  end
+
+  def test_does_not_relink_an_edge_that_already_exists
+    ops = Board.reconcile(
+      docs: [slice(uuid: "child")],
+      cards: [{ "id" => "child", "status" => "Todo" },
+              { "id" => "parent", "status" => "Todo" }],
       parents: { "s.md" => "parent" }, edges: [%w[parent child]]
     )
     assert_nil ops.find { |o| o.kind == :link }

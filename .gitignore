@@ -10,3 +10,6 @@ HANDOFF.md
 
 # runtime logs — the update hook writes one beside itself
 *.log
+
+# derived board — regenerate with /hexagram:board, never track it
+.kanban.json

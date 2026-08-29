@@ -48,3 +48,6 @@ venv/
 # environment or in a parameter store rather than in a tfvars file (see the `terraform` skill).
 # A project that does put secrets in tfvars should add *.tfvars back.
 *.auto.tfvars
+
+# derived board — regenerate with /hexagram:board, never track it
+.kanban.json

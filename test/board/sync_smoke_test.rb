@@ -61,3 +61,34 @@ class SinglePassLinkTest < Minitest::Test
     end
   end
 end
+
+class RebuildTest < Minitest::Test
+  def test_deleting_the_board_and_re_syncing_reproduces_it_with_statuses
+    skip "kanban not on PATH" unless system("command -v kanban > /dev/null 2>&1")
+
+    Dir.mktmpdir do |dir|
+      docs = File.join(dir, "docs")
+      FileUtils.mkdir_p(File.join(docs, "pitches"))
+      FileUtils.mkdir_p(File.join(docs, "plans", "alpha"))
+      File.write(File.join(docs, "pitches", "alpha.md"), "---\nstatus: active\n---\n\n# Alpha\n")
+      File.write(File.join(docs, "plans", "alpha", "slice-01-a.md"),
+                 "---\nstatus: done\n---\n\n# Slice 01\n")
+
+      board = File.join(dir, ".kanban.json")
+      Board.init(board_file: board, board_name: "W", prefix: "HEX")
+      Board.sync(docs_root: docs, board_file: board, board_name: "W")
+
+      File.delete(board)
+      Board.init(board_file: board, board_name: "W", prefix: "HEX")
+      r = Board.sync(docs_root: docs, board_file: board, board_name: "W")
+
+      assert_equal 2, r.created, "a wiped board must be re-created from the files"
+      assert_equal 1, r.linked
+
+      cards = JSON.parse(`kanban #{board} card list --board W`)["data"]["items"]
+      by_title = cards.each_with_object({}) { |c, h| h[c["title"]] = c["status"].to_s.downcase }
+      assert_equal "done", by_title["Slice 01"], "status must survive the rebuild"
+      assert_equal "inprogress", by_title["Alpha"].delete("_")
+    end
+  end
+end

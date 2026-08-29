@@ -18,6 +18,19 @@ not a slice, it is a layer, and layers are how a plan stops being executable.
 unforeseen prerequisite, a walkthrough somebody needed, a case the original numbering had no room for.
 Renumbering to keep it tidy destroys the record of what actually happened.
 
+## Frontmatter
+
+```yaml
+---
+status: todo         # todo | doing | blocked | done
+kanban: <uuid>       # written by the `board` skill; do not edit
+---
+```
+
+**Both keys are optional.** A slice with no frontmatter at all reads as `todo`, and gains the block the
+first time something writes to it — so slices written before this existed need no migration. A repo
+that does not use the `board` skill never sees `kanban:` at all.
+
 ## What a slice says
 
 | field | |

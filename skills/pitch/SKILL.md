@@ -27,6 +27,9 @@ writing anything — a pitch invented from an empty prompt is a template with a 
 `docs/clients/<client>/pitches/<slug>.md`, where `<client>` is that client's folder name under
 `docs/clients/`. House work stays at the top level.
 
+**Leave `kanban:` empty.** The `board` skill fills it with the card uuid on its first sync, and
+nothing else should ever write it. A repo that does not use the board simply leaves it blank.
+
 ⚠️ **A new pitch is always born in the root of that folder with `status: active`**, because it is
 being written now, about work that matters now. `future/` and `archive/` are where a pitch *moves*
 later, never where it starts. If those folders exist, `docs/pitches/README.md` says what each one
@@ -40,6 +43,7 @@ tags:
   - pitch
   - <area or feature tags>
 status: active
+kanban:
 ---
 
 # Pitch — <Feature Title>

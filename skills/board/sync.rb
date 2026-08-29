@@ -131,6 +131,19 @@ module Board
   # exist until its card does. So a first pass that created anything is followed
   # by a second, which sees the uuids the first one wrote. Converges in two, and
   # the second pass is a no-op whenever the first created nothing.
+  # --card-prefix goes in the `board create` call and NOWHERE else. Calling
+  # `board update --card-prefix` on a board that already holds cards resets the
+  # card-number sequence and produces duplicate identifiers -- an upstream
+  # defect, reproduced and isolated to exactly that one operation. Creating the
+  # board with its prefix means the trigger is never reached. This comment
+  # stays: the next person to touch it will not have read the research.
+  def self.init(board_file:, board_name:, prefix:)
+    api = Kanban.new(board_file)
+    api.run("init") unless File.exist?(board_file)
+    api.run("board", "create", "--name", board_name,
+            "--card-prefix", prefix, "--with-default-columns")
+  end
+
   def self.sync(docs_root:, board_file:, board_name:)
     first = pass(docs_root: docs_root, board_file: board_file, board_name: board_name)
     return first if first.created.zero?
@@ -157,7 +170,13 @@ module Board
     parents = docs.each_with_object({}) do |d, h|
       h[d.path] = by_path[d.parent_path] if d.parent_path
     end
-    edges = docs.select { |d| d.kind == :pitch && d.uuid }.flat_map do |pitch|
+    # Only ask about parents whose card actually exists. A file can point at a
+    # uuid that is gone -- the board was deleted, or rebuilt elsewhere -- and
+    # `relation children` on a missing card is an error, not an empty list. Left
+    # unguarded it aborts the whole sync before reconcile can re-create anything,
+    # which is exactly the case reconcile exists to handle.
+    live = cards.map { |c| c["id"] }
+    edges = docs.select { |d| d.kind == :pitch && live.include?(d.uuid) }.flat_map do |pitch|
       api.run("relation", "children", pitch.uuid).map { |c| [pitch.uuid, c["id"]] }
     end
 
@@ -267,11 +286,17 @@ module Board
       end
     end
 
+    # BOTH cards have to exist before an edge between them can. After a board is
+    # wiped, every file still carries its old uuid, so without these two guards
+    # this emits a link between two cards that are about to be re-created and
+    # kanban rejects it. The re-created pair links on the second pass, which is
+    # what the two-pass sync is for.
     docs.each do |d|
       next unless d.kind == :slice && d.uuid
+      next unless by_id.key?(d.uuid)
 
       parent_uuid = parents[d.path]
-      next if parent_uuid.nil?
+      next if parent_uuid.nil? || !by_id.key?(parent_uuid)
       next if edges.include?([parent_uuid, d.uuid])
 
       ops << Op.new(kind: :link, uuid: d.uuid, parent_uuid: parent_uuid, path: d.path)
@@ -286,10 +311,15 @@ module Board
 end
 
 if $PROGRAM_NAME == __FILE__
-  docs_root, board_file, board_name = ARGV
-  abort "usage: sync.rb <docs-root> <board-file> <board-name>" unless board_name
+  args = ARGV.dup
+  do_init = args.delete("--init")
+  docs_root, board_file, board_name, prefix = args
+
+  abort "usage: sync.rb [--init] <docs-root> <board-file> <board-name> [prefix]" unless board_name
+  abort "--init needs a prefix" if do_init && (prefix.nil? || prefix.empty?)
 
   begin
+    Board.init(board_file: board_file, board_name: board_name, prefix: prefix) if do_init
     r = Board.sync(docs_root: docs_root, board_file: board_file, board_name: board_name)
     puts "#{r.created} created, #{r.updated} updated, #{r.written} written, #{r.linked} linked"
     r.orphans.each   { |u| warn "orphan card (not deleted): #{u}" }
@@ -298,5 +328,8 @@ if $PROGRAM_NAME == __FILE__
   rescue Board::Kanban::Missing
     warn "kanban is not on PATH. Install it with: cargo install kanban-cli"
     exit 127
+  rescue Board::Kanban::Failed => e
+    warn "kanban rejected a command: #{e.message}"
+    exit 1
   end
 end
