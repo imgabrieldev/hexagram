@@ -38,11 +38,26 @@ module Board
       [YAML.safe_load(m[1]) || {}, m.post_match]
     end
 
-    # Key order is whatever the caller put in the Hash.
-    def self.render(data, body)
-      return body if data.empty?
+    # Sets ONE key, as a line edit, and leaves every other byte alone.
+    #
+    # Re-dumping the parsed Hash was the obvious implementation and it was
+    # wrong: Psych writes its own indentation, so `tags:\n  - plan` came back as
+    # `tags:\n- plan` and a one-line change showed up in git as five. Worse, a
+    # round trip through the parser silently deletes comments inside the block.
+    # A document this touches should show exactly the line it came to write.
+    def self.set(text, key, value)
+      line = "#{key}: #{value}\n"
+      m = FENCE.match(text)
+      return "---\n" + line + "---\n" + text unless m
 
-      "---\n" + YAML.dump(data).sub(/\A---\r?\n/, "") + "---\n" + body
+      block = m[1]
+      existing = /^#{Regexp.escape(key)}:.*\n?/
+      block = if block =~ existing
+                block.sub(existing, line)
+              else
+                block.sub(/\n?\z/, "\n") + line
+              end
+      "---\n" + block.sub(/\n?\z/, "\n") + "---\n" + m.post_match
     end
   end
 
@@ -152,7 +167,7 @@ module Board
       id
     end
   end
-  Report = Struct.new(:created, :updated, :linked, :written, :orphans, :conflicts,
+  Report = Struct.new(:created, :updated, :moved, :linked, :written, :orphans, :conflicts,
                       keyword_init: true)
 
   # A pass that creates cards cannot also link them: the parent's uuid does not
@@ -180,6 +195,7 @@ module Board
     Report.new(
       created: first.created + second.created,
       updated: first.updated + second.updated,
+      moved: first.moved + second.moved,
       linked: first.linked + second.linked,
       written: first.written + second.written,
       orphans: second.orphans,
@@ -191,7 +207,8 @@ module Board
     api = Kanban.new(board_file)
     docs = scan_pitches(docs_root) + scan_slices(docs_root) + scan_superpowers_plans(docs_root)
     cards = api.run("card", "list", "--board", board_name).fetch("items")
-    report = Report.new(created: 0, updated: 0, linked: 0, written: 0,
+    columns = api.run("column", "list", "--board", board_name).fetch("items")
+    report = Report.new(created: 0, updated: 0, moved: 0, linked: 0, written: 0,
                         orphans: [], conflicts: [])
 
     by_path = docs.each_with_object({}) { |d, h| h[d.path] = d.uuid }
@@ -208,11 +225,14 @@ module Board
       api.run("relation", "children", pitch.uuid).map { |c| [pitch.uuid, c["id"]] }
     end
 
-    reconcile(docs: docs, cards: cards, parents: parents, edges: edges).each do |op|
+    reconcile(docs: docs, cards: cards, parents: parents, edges: edges,
+              columns: columns).each do |op|
       case op.kind
       when :create
+        want = STATUS_TO_KANBAN.fetch(op.doc.status, "todo")
+        home = columns.find { |c| c["default_status"].to_s == want } || columns.first
         uuid = api.create_card(
-          board: board_name, column: "TODO", title: op.doc.title,
+          board: board_name, column: home.fetch("name"), title: op.doc.title,
           status: STATUS_TO_KANBAN.fetch(op.doc.status, "todo"),
           description: description_for(op.doc)
         )
@@ -225,6 +245,9 @@ module Board
       when :write_file
         write_back(op.doc, "status" => op.status)
         report.written += 1
+      when :move
+        api.run("card", "move", op.uuid, "--column", op.column_id)
+        report.moved += 1
       when :link
         # relation add takes POSITIONAL <PARENT> <CHILDREN>... The upstream
         # README documents --parent/--child; those flags do not exist.
@@ -238,10 +261,12 @@ module Board
     report
   end
 
-  # Rewrites one file's frontmatter, preserving key order and body.
+  # Applies each update as its own line edit, so the diff is one line per key
+  # actually changed and nothing else in the document moves.
   def self.write_back(doc, updates)
-    data = doc.data.merge(updates)
-    File.write(doc.path, Frontmatter.render(data, doc.body))
+    text = File.read(doc.path, encoding: "UTF-8")
+    updates.each { |key, value| text = Frontmatter.set(text, key, value) }
+    File.write(doc.path, text)
   end
 
   # One place that knows kanban writes its statuses two ways: `card list`
@@ -260,11 +285,11 @@ module Board
     canonical_status(one) == canonical_status(other)
   end
 
-  Op = Struct.new(:kind, :path, :paths, :uuid, :parent_uuid, :status, :doc,
+  Op = Struct.new(:kind, :path, :paths, :uuid, :parent_uuid, :status, :column_id, :doc,
                   keyword_init: true)
 
   # Pure: (docs, cards) -> [Op]. No IO, no process, no clock.
-  def self.reconcile(docs:, cards:, parents: {}, edges: [])
+  def self.reconcile(docs:, cards:, parents: {}, edges: [], columns: [])
     by_id = cards.each_with_object({}) { |c, h| h[c["id"]] = c }
     claimed = Hash.new { |h, k| h[k] = [] }
     docs.each { |d| claimed[d.uuid] << d.path if d.uuid }
@@ -295,6 +320,16 @@ module Board
       end
 
       want = STATUS_TO_KANBAN.fetch(d.status, "todo")
+
+      # Status and column are separate in kanban: setting one does not place the
+      # other, and a board where every card sits in TODO is not a board. The
+      # column follows the status, because the markdown owns the status.
+      home = columns.find { |c| c["default_status"].to_s == want }
+      here = columns.find { |c| c["id"] == card["column_id"] }
+      if home && here && !here["default_status"].nil? && here["id"] != home["id"]
+        ops << Op.new(kind: :move, uuid: d.uuid, column_id: home["id"], path: d.path)
+      end
+
       next if same_status?(card["status"], want)
 
       card_time = begin
@@ -349,7 +384,8 @@ if $PROGRAM_NAME == __FILE__
   begin
     Board.init(board_file: board_file, board_name: board_name, prefix: prefix) if do_init
     r = Board.sync(docs_root: docs_root, board_file: board_file, board_name: board_name)
-    puts "#{r.created} created, #{r.updated} updated, #{r.written} written, #{r.linked} linked"
+    puts "#{r.created} created, #{r.updated} updated, #{r.moved} moved, " \
+         "#{r.written} written, #{r.linked} linked"
     r.orphans.each   { |u| warn "orphan card (not deleted): #{u}" }
     r.conflicts.each { |ps| warn "conflict: #{ps.join(' and ')} claim the same card" }
     exit(r.conflicts.empty? ? 0 : 1)
