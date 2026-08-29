@@ -141,4 +141,38 @@ else
 fi
 echo "::endgroup::"
 
+# ------------------------------------------------- board: uuid addressing only
+#
+# skills/board is immune to the upstream kanban numbering defect for exactly one
+# reason: it never addresses a card by its PREFIX-N identifier, only by uuid. A
+# comment saying so is not enforcement; this is.
+#
+# TWO TRAPS, both hit while writing this, both silent:
+#
+#   * A card identifier and an encoding name are the same shape. `[A-Z]{2,}-[0-9]+`
+#     matches UTF-8 and ASCII-8BIT, and both appear in skills/board/sync.rb
+#     because the UTF-8 read is itself a mandatory rule. Full-line comments are
+#     stripped first, and the encoding tokens are excluded BY NAME, not by shape.
+#   * `git grep -E` does NOT support `\b`. POSIX ERE has no word boundary, so a
+#     pattern that works in `grep -E` on a Mac matches NOTHING under git grep --
+#     the check reported a clean tree while a planted `KAN-7` sat in the file.
+#     Verified by planting one. No `\b` here, and `-P` is not portable enough
+#     to rely on.
+
+echo "::group::board addresses cards by uuid, never by identifier"
+if [ -d skills/board ]; then
+  board_hits=$(git grep -nE 'card_number|[A-Z]{2,5}-[0-9]+' -- skills/board/ \
+               | grep -vE ':[0-9]+:[[:space:]]*#' \
+               | grep -vE 'UTF-8|ASCII-8BIT' || true)
+  if [ -n "$board_hits" ]; then
+    err "board must address cards by uuid, never by identifier or card_number:"
+    echo "$board_hits" | sed 's/^/       /'
+  else
+    echo "  ok   no identifier addressing in skills/board"
+  fi
+else
+  echo "  no skills/board"
+fi
+echo "::endgroup::"
+
 exit "$fail"

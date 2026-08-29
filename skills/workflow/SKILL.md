@@ -68,6 +68,9 @@ small enough to ship, each ending in a command whose output is the pass or fail.
 
 Get agreement on the plan before writing production code.
 
+The `board` skill projects these slices onto a kanban board and syncs `status:` back, so an
+agent can be told what to do next over MCP. It is optional and the loop does not depend on it.
+
 ## 5. Implement
 
 Follow the slices in order. Tests alongside the code, never as a follow-up.
