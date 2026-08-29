@@ -7,8 +7,8 @@ description: Use when you want this repo's pitches and plan slices shown as a ka
 
 # board
 
-Sync this repo's `docs/pitches/` and `docs/plans/` onto a kanban board. Invoked as `/hexagram:board` —
-plugin skills are namespaced by the plugin they ship in.
+Sync this repo's `docs/pitches/`, `docs/plans/` and `docs/superpowers/plans/` onto a kanban board.
+Invoked as `/hexagram:board` — plugin skills are namespaced by the plugin they ship in.
 
 This is a **view over the markdown, not a second source of truth**. The files decide; the board
 follows. The one field that travels the other way is `status:`, so that moving a card produces a diff
@@ -45,9 +45,17 @@ ruby "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.rb" docs .kanban.json Work
 
 Reports `N created, N updated, N written, N linked`.
 
+### What becomes a card
+
+| document | card |
+|---|---|
+| `docs/pitches/*.md` | a parent card. `README.md` and the `archive/` `future/` subfolders are skipped |
+| `docs/plans/<feature>/slice-*.md` | a child card of that feature's pitch |
+| `docs/superpowers/plans/*.md` | a **top-level card**, no parent — a superpowers plan is one file with its tasks inside, so there is nothing for it to be a child of. `specs/` next door is not scanned: a spec is a design record, not work with a status |
+
 | what it does | when |
 |---|---|
-| creates a card | a pitch or slice has no `kanban:` key, **or** points at a card that no longer exists |
+| creates a card | a document has no `kanban:` key, **or** points at a card that no longer exists |
 | moves a card | the file's `status:` changed and the file is newer |
 | writes the file | the card moved and the card is newer |
 | links | a slice card is not yet a child of its pitch card |

@@ -53,7 +53,7 @@ module Board
       heading = body[/^\#\s+(.+)$/, 1]
       new(path: path, kind: kind, body: body, data: data, parent_path: parent_path, mtime: mtime,
           title: heading || File.basename(path, ".md"),
-          status: data["status"] || (kind == :slice ? "todo" : nil),
+          status: data["status"] || (%i[slice plan].include?(kind) ? "todo" : nil),
           uuid: data["kanban"])
     end
   end
@@ -68,6 +68,23 @@ module Board
       pitch = File.join(root, "pitches", "#{feature}.md")
       Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :slice,
                parent_path: (File.exist?(pitch) ? pitch : nil), mtime: File.mtime(path))
+    end
+  end
+
+  # Plans written by the superpowers skills live here rather than under
+  # docs/plans, and they are a single file with the tasks inside instead of a
+  # directory of slices. So each one is a top-level card with no parent -- there
+  # is nothing to be a child of, and inventing a synthetic parent would put a
+  # box on the board that no document backs.
+  #
+  # `specs/` next door is deliberately not scanned: a spec is a design record,
+  # not work with a status.
+  def self.scan_superpowers_plans(root)
+    Dir.glob(File.join(root, "superpowers", "plans", "*.md"))
+       .reject { |path| INDEX_FILES.include?(File.basename(path)) }
+       .sort.map do |path|
+      Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :plan,
+               mtime: File.mtime(path))
     end
   end
 
@@ -172,7 +189,7 @@ module Board
 
   def self.pass(docs_root:, board_file:, board_name:)
     api = Kanban.new(board_file)
-    docs = scan_pitches(docs_root) + scan_slices(docs_root)
+    docs = scan_pitches(docs_root) + scan_slices(docs_root) + scan_superpowers_plans(docs_root)
     cards = api.run("card", "list", "--board", board_name).fetch("items")
     report = Report.new(created: 0, updated: 0, linked: 0, written: 0,
                         orphans: [], conflicts: [])
