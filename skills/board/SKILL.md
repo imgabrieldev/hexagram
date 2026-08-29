@@ -48,7 +48,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/board/install.md"
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.py" --init docs .kanban.json Work HEX
 ```
 
-Creates `.kanban.json` and seeds TODO / Doing / Complete, with the card prefix set **in the same call**.
+Creates `.kanban.json`, seeds TODO / Doing / Complete with the card prefix set **in the same call**,
+and puts a **WIP limit of 1 on Doing** — see *Doing holds one card* below.
 
 Cards are created in the column whose `default_status` matches, so the first sync already looks like a
 board rather than one long TODO list.
@@ -93,10 +94,20 @@ markdown is the source of truth, so where the evidence is ambiguous the tool yie
 ---
 status: doing        # todo | doing | blocked | done. Absent reads as todo.
 kanban: 8cabb3d6-…   # the card uuid, written by the sync. Do not edit it.
+board: false         # optional. Keeps this document off the board entirely.
 ---
 ```
 
 Pitches keep the `status: active` they already use, which maps to Doing on the board.
+
+**`board: false` exists for one shape that otherwise appears twice.** A superpowers plan broken into
+slices is on the board as itself *and* as its eight children, and the duplicate is noise no column
+policy fixes. `no`, `skip` and `off` read the same way; anything unrecognised **keeps** the card, so a
+typo cannot make work vanish silently.
+
+⚠️ **It stops a card being created; it does not delete one.** Adding `board: false` to a document that
+already synced leaves its card behind, and the run then reports it as an orphan — removing it is a
+deliberate `kanban card delete`.
 
 ## Working the board as an agent
 
@@ -112,9 +123,38 @@ priority but **not** the description, so the `Done when` is not in the list. Fil
 `Todo`, then `tool_get_card` the one you want — the description carries the file path and the command
 that proves the slice finished.
 
+## Doing holds one card
+
+`--init` sets a **WIP limit of 1** on the Doing column, and that is the one practice here which is not
+a preference. The Kanban Guide lists controlling work in progress among the mandatory practices —
+*"Kanban system members must explicitly control the number of work items in a workflow from started to
+finished"* — and the personal-kanban literature names what a board without one becomes: *"a prettier
+task list"*, because four cards in Doing is not four tasks, it is four unresolved contexts.
+
+One, because the audience is one person. And it is not imported ceremony: every hexagram repo already
+carries the same rule in prose — *frozen scope per checkpoint*, *one green per session*, *one thing at
+a time*. The limit only makes it mechanical, which is the same move the sync already makes for
+`status:`.
+
+The guide leaves the mechanism open — *"any way that Kanban system members deem appropriate"* — so this
+is a default, not a law:
+
+```bash
+kanban .kanban.json column update <column-id> --clear-wip-limit
+```
+
+⚠️ **It is set at `--init` and never by the sync**, so a limit you changed later is never quietly
+overwritten.
+
 ## What it will not do
 
-Sprints, story points, due dates, WIP limits, and cards for research or postmortems are all
-deliberately absent — see the pitch. Cards are addressed **only by uuid**, never by the `PREFIX-N`
-identifier, which upstream corrupts if a board's card prefix is changed after cards exist; a CI check
-enforces that rather than trusting it.
+Sprints, story points, due dates, and cards for research or postmortems are all deliberately absent —
+see the pitch. Dropping estimation holds up on its own terms: counting finished items forecasts about
+as well as pointing them, and for one developer estimation has nobody to coordinate with.
+
+Cards are addressed **only by uuid**, never by the `PREFIX-N` identifier, which upstream corrupts if a
+board's card prefix is changed after cards exist; a CI check enforces that rather than trusting it.
+
+**There are no tags.** `kanban card create` has no such field, so grouping lives in the markdown —
+frontmatter `tags:`, which the vault can already query — and reaches the board only through the `#`
+heading a card takes its title from.

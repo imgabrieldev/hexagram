@@ -32,6 +32,21 @@ DONE_WHEN = re.compile(r"^##\s+Done when\s*\n+(.+?)(?=\n##\s|\Z)", re.S | re.M)
 
 INDEX_FILES = ("README.md",)
 
+# The WIP limit set on the Doing column at init. One, because the audience is one
+# person: the personal-kanban recommendation for a single developer is Doing = 1,
+# and every hexagram repo already carries the same rule in prose -- "one thing at
+# a time", "frozen scope per checkpoint". See `board: false` below for the other
+# half of the same idea: what a board must not show.
+DOING_WIP = 1
+
+# A document opts out of the board with `board: false` in its frontmatter.
+# It exists because a plan broken into slices would otherwise appear twice --
+# once as itself and once as its eight children -- and the duplicate is noise
+# that no amount of column policy fixes. Name-matching the plan to its slice
+# directory was the alternative and it is worse: the names legitimately differ,
+# so the magic would work by luck and fail silently.
+OPT_OUT = ("false", "no", "skip", "off")
+
 STATUS_TO_KANBAN = {
     "todo": "todo",
     "doing": "in_progress",
@@ -271,6 +286,17 @@ def scan_superpowers_plans(root):
             if os.path.basename(p) not in INDEX_FILES]
 
 
+def on_board(doc):
+    """Pure: does this document want a card?
+
+    A document opts out with `board: false`. ⚠️ It only stops a card being
+    CREATED -- nothing here ever deletes, so adding `board: false` to a document
+    that already synced leaves the card behind, and the run reports it as an
+    orphan. Removing it is a deliberate `kanban card delete`.
+    """
+    return str(doc.data.get("board", "")).strip().lower() not in OPT_OUT
+
+
 def description_for(doc):
     """What an agent needs in order to act without opening the file first."""
     hit = DONE_WHEN.search(doc.body)
@@ -391,6 +417,24 @@ def init(board_file, board_name, prefix):
     api.run("board", "create", "--name", board_name,
             "--card-prefix", prefix, "--with-default-columns")
 
+    # Limiting work in progress is the one Kanban practice that is not optional.
+    # The Kanban Guide makes it mandatory -- "Kanban system members must
+    # explicitly control the number of work items in a workflow from started to
+    # finished" -- and without it a board is, in the words of the personal-kanban
+    # literature, "a prettier task list": four cards in Doing is not four tasks,
+    # it is four unresolved contexts.
+    #
+    # DOING_WIP is 1 because the audience is one person. The guide leaves the
+    # mechanism open -- "any way that Kanban system members deem appropriate" --
+    # so this is a default, not a law: `kanban column update <id>
+    # --clear-wip-limit` removes it. It is set HERE, at init, and never by the
+    # sync, so a limit a human changed later is never quietly overwritten.
+    for column in api.run("column", "list", "--board", board_name)["items"]:
+        if str(column.get("default_status")) == "in_progress":
+            api.run("column", "update", column["id"],
+                    "--wip-limit", str(DOING_WIP))
+            break
+
 
 def sync(docs_root, board_file, board_name):
     """A pass that creates cards cannot also link them: the parent's uuid does
@@ -406,6 +450,8 @@ def _pass(docs_root, board_file, board_name):
     api = Kanban(board_file)
     docs = (scan_pitches(docs_root) + scan_slices(docs_root)
             + scan_superpowers_plans(docs_root))
+    # Applied here rather than in each scanner: it holds for every kind.
+    docs = [d for d in docs if on_board(d)]
     cards = api.run("card", "list", "--board", board_name)["items"]
     columns = api.run("column", "list", "--board", board_name)["items"]
     report = Report()
