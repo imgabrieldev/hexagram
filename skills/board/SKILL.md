@@ -26,7 +26,18 @@ cargo install kanban-cli kanban-mcp
 That is the only one. The sync is stdlib Python 3 and targets the interpreter that ships with the OS
 (3.9 on macOS), so there is nothing to install for it.
 
-If `kanban` is not on `PATH`, every entry point here exits non-zero, says this, and **changes no file**.
+If `kanban` is not on `PATH`, every entry point here exits non-zero, says so, and **changes no file**.
+
+**Not everyone has a Rust toolchain, and the line above assumes one.** `install.md` beside this file
+is written to be executed rather than read — check first, ask before installing Rust, install, verify
+against the binary:
+
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/board/install.md"
+```
+
+`/hexagram:setup-machine` reports the same gap from the other direction: `kanban` is this plugin's one
+`requires` entry, and the manifest carries the command that fixes it.
 
 ## First run
 

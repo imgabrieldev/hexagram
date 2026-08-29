@@ -483,7 +483,10 @@ def main(argv):
             sys.stderr.write("conflict: {} claim the same card\n".format(" and ".join(paths)))
         return 0 if not r.conflicts else 1
     except KanbanMissing:
-        sys.stderr.write("kanban is not on PATH. Install it with: cargo install kanban-cli\n")
+        sys.stderr.write("kanban is not on PATH, so nothing was read or written.\n"
+                         "Install it with: cargo install kanban-cli kanban-mcp\n"
+                         "Full instructions, including the Rust toolchain it needs: "
+                         "skills/board/install.md\n")
         return 127
     except KanbanFailed as exc:
         sys.stderr.write("kanban rejected a command: {}\n".format(exc))

@@ -11,5 +11,9 @@ HANDOFF.md
 # runtime logs — the update hook writes one beside itself
 *.log
 
+# bytecode from running the board suite — the ruby-to-python port added the
+# sources and left this out, so `python3 test/run.py` dirtied the tree
+__pycache__/
+
 # derived board — regenerate with /hexagram:board, never track it
 .kanban.json

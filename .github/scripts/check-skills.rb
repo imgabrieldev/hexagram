@@ -134,7 +134,10 @@ end
 # needs the network, it rate-limits, and skills legitimately name paths that do
 # not exist yet.
 
-(skill_files + ["README.md"]).select { |f| File.exist?(f) }.each do |file|
+DOCS = (skill_files + Dir.glob("skills/*/*.md") + ["README.md"])
+       .uniq.select { |f| File.exist?(f) }.sort
+
+DOCS.each do |file|
   File.read(file, encoding: "UTF-8").each_line.with_index(1) do |line, n|
     line.scan(/hexagram:([a-z][a-z0-9-]*)/) do |m|
       err(file, n, "references hexagram:#{m[0]} — there is no skills/#{m[0]}/") unless SKILLS.include?(m[0])
@@ -174,7 +177,11 @@ end
 # `<(` (process substitution), `<=`, or a numbered fd like `2<`.
 PLACEHOLDER = /(?<![<\d\w])<(?![<(=])\s*[A-Za-z]/
 
-markdown = (skill_files + ["README.md"]).select { |f| File.exist?(f) }
+# EVERY markdown a skill ships, not only its SKILL.md. `board/install.md` is the
+# reason: it exists to be EXECUTED by Claude on someone else's machine, so a fence
+# that does not parse there is worse than one in prose — and until this glob
+# widened, no check opened that file at all.
+markdown = DOCS
 
 # RULE 1 — the placeholder that reads as a redirect.
 #
