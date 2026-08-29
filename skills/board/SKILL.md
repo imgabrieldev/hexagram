@@ -122,6 +122,55 @@ priority but **not** the description, so the `Done when` is not in the list. Fil
 `Todo`, then `tool_get_card` the one you want — the description carries the file path and the command
 that proves the slice finished.
 
+`show.py --next` does exactly that in one command, and is the faster route when you are at a terminal
+rather than holding the MCP server open.
+
+## Looking at it
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/show.py" .kanban.json Work
+```
+
+Columns of cards, sized to the terminal. An **epic is marked** — a card with children — because
+without that a Doing holding one epic and one task reads as two things in progress, which is the
+opposite of what it means.
+
+```
+TODO · 1                     DOING · 2                    COMPLETE · 1
+──────────────────────────   ──────────────────────────   ──────────────────────────
+╭────────────────────────╮   ╭────────────────────────╮   ╭────────────────────────╮
+│ ACME-3                 │   │ ACME-1            EPIC │   │ ACME-4                 │
+│ Slice 2                │   │ Public API             │   │ Slice 3                │
+│ Rate limiting          │   ╰────────────────────────╯   │ Health check           │
+╰────────────────────────╯   ╭────────────────────────╮   ╰────────────────────────╯
+                             │ ACME-2                 │
+                             │ Slice 1                │
+                             │ Auth endpoint with     │
+                             │ token refresh          │
+                             ╰────────────────────────╯
+```
+
+And the next thing to pick up, with what proves it done:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/show.py" .kanban.json Work --next
+```
+
+```
+ACME-3  Slice 2 — Rate limiting
+
+docs/plans/api/slice-2-rate.md
+
+Done when: 429 after N requests
+```
+
+⚠️ **It only draws.** Moving a card stays a `status:` edit plus a sync, so a move lands in
+`git diff` — a renderer that could also write would quietly become the second source of truth this
+skill exists to avoid. A test asserts it never calls a writing subcommand.
+
+`PREFIX-N` appears here and **only** here, for display. Cards are still addressed by uuid everywhere
+else, for the renumbering reason below.
+
 ## Doing holds one card — as a policy, not a column cap
 
 Limiting work in progress is the one practice here that is not a preference. The Kanban Guide lists

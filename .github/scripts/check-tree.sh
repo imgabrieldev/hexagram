@@ -159,16 +159,34 @@ echo "::endgroup::"
 #     Verified by planting one. No `\b` here, and `-P` is not portable enough
 #     to rely on.
 
+#   * A THIRD trap, found when the renderer arrived: the shape is not the hazard.
+#     `show.py` must read card_number to print PREFIX-N and to sort by it, and the
+#     docs must show the output the tool actually produces. Flagging those made
+#     the check cry wolf on its own skill. The hazard is an identifier used as an
+#     ARGUMENT, so code now needs an audited per-line waiver and prose is checked
+#     for the argument shape rather than for any identifier at all. The waiver
+#     count is printed: an exemption that can grow in silence is not a check.
+
 echo "::group::board addresses cards by uuid, never by identifier"
 if [ -d skills/board ]; then
-  board_hits=$(git grep -nE 'card_number|[A-Z]{2,5}-[0-9]+' -- skills/board/ \
-               | grep -vE ':[0-9]+:[[:space:]]*#' \
-               | grep -vE 'UTF-8|ASCII-8BIT' || true)
+  # Code: any identifier or card_number, unless the line carries the waiver.
+  code_hits=$(git grep -nE 'card_number|[A-Z]{2,5}-[0-9]+' \
+                 -- 'skills/board/*.py' 'skills/board/*.sh' \
+              | grep -vE ':[0-9]+:[[:space:]]*#' \
+              | grep -vE 'UTF-8|ASCII-8BIT' \
+              | grep -v 'board-id-ok' || true)
+  # Prose: only an identifier passed to the binary, which is the actual defect.
+  # An identifier merely PRINTED in sample output cannot corrupt anything.
+  doc_hits=$(git grep -nE 'kanban[^|]*[A-Z]{2,5}-[0-9]+' -- 'skills/board/*.md' \
+             | grep -vE 'UTF-8|ASCII-8BIT' || true)
+  board_hits=$(printf '%s\n%s' "$code_hits" "$doc_hits" | grep -v '^$' || true)
+  waivers=$(git grep -c 'board-id-ok' -- 'skills/board/*.py' 'skills/board/*.sh' \
+            | awk -F: '{n += $2} END {print n + 0}')
   if [ -n "$board_hits" ]; then
     err "board must address cards by uuid, never by identifier or card_number:"
     echo "$board_hits" | sed 's/^/       /'
   else
-    echo "  ok   no identifier addressing in skills/board"
+    echo "  ok   no identifier addressing in skills/board ($waivers display waiver(s))"
   fi
 else
   echo "  no skills/board"
