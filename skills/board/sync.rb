@@ -77,8 +77,19 @@ module Board
     done.empty? ? doc.path : "#{doc.path}\n\nDone when: #{done}"
   end
 
+  # Index files are not pitches. `docs/pitches/README.md` explains what the
+  # folder is for and every hexagram repo has one -- scanning it produced a card
+  # titled "Pitches" on the first real repo this ran against. The slice glob
+  # never had this problem because it matches `slice-*.md`.
+  #
+  # Root only, deliberately: `archive/` and `future/` are where a pitch MOVES
+  # when it stops being current, so a board of active work should not show them.
+  INDEX_FILES = %w[README.md].freeze
+
   def self.scan_pitches(root)
-    Dir.glob(File.join(root, "pitches", "*.md")).sort.map do |path|
+    Dir.glob(File.join(root, "pitches", "*.md"))
+       .reject { |path| INDEX_FILES.include?(File.basename(path)) }
+       .sort.map do |path|
       Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :pitch,
                mtime: File.mtime(path))
     end

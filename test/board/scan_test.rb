@@ -57,3 +57,19 @@ class ScanTest < Minitest::Test
     end
   end
 end
+
+class PitchScanTest < Minitest::Test
+  def test_readme_is_not_a_pitch
+    Dir.mktmpdir do |dir|
+      docs = File.join(dir, "docs")
+      FileUtils.mkdir_p(File.join(docs, "pitches", "archive"))
+      File.write(File.join(docs, "pitches", "README.md"), "# Pitches\n\nWhat this folder is for.\n")
+      File.write(File.join(docs, "pitches", "real.md"), "---\nstatus: active\n---\n\n# Real\n")
+      File.write(File.join(docs, "pitches", "archive", "old.md"), "---\nstatus: done\n---\n\n# Old\n")
+
+      names = Board.scan_pitches(docs).map { |d| File.basename(d.path) }
+
+      assert_equal ["real.md"], names
+    end
+  end
+end
