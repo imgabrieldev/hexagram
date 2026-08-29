@@ -45,14 +45,35 @@ module Board
     end
   end
 
-  Doc = Struct.new(:path, :kind, :title, :status, :uuid, :body, :data, keyword_init: true) do
-    def self.from(path:, text:, kind:)
+  Doc = Struct.new(:path, :kind, :title, :status, :uuid, :body, :data, :parent_path,
+                   keyword_init: true) do
+    def self.from(path:, text:, kind:, parent_path: nil)
       data, body = Frontmatter.parse(text)
       heading = body[/^\#\s+(.+)$/, 1]
-      new(path: path, kind: kind, body: body, data: data,
+      new(path: path, kind: kind, body: body, data: data, parent_path: parent_path,
           title: heading || File.basename(path, ".md"),
-          status: data["status"], uuid: data["kanban"])
+          status: data["status"] || (kind == :slice ? "todo" : nil),
+          uuid: data["kanban"])
     end
+  end
+
+  # The glob is slice-*.md, which is what excludes README.md. The plain
+  # lexicographic sort is what puts slice-01b between 01 and 02.1 -- do NOT
+  # "fix" it with a numeric parse: fractional names are deliberate, and
+  # normalising them throws away the record of what actually happened.
+  def self.scan_slices(root)
+    Dir.glob(File.join(root, "plans", "*", "slice-*.md")).sort.map do |path|
+      feature = File.basename(File.dirname(path))
+      pitch = File.join(root, "pitches", "#{feature}.md")
+      Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :slice,
+               parent_path: (File.exist?(pitch) ? pitch : nil))
+    end
+  end
+
+  # What an agent needs in order to act without opening the file first.
+  def self.description_for(doc)
+    done = doc.body[/^\#\#\s+Done when\s*\n+(.+?)(?=\n\#\#\s|\z)/m, 1].to_s.strip
+    done.empty? ? doc.path : "#{doc.path}\n\nDone when: #{done}"
   end
 
   def self.scan_pitches(root)
@@ -101,19 +122,47 @@ module Board
   Report = Struct.new(:created, :updated, :linked, :written, :orphans, :conflicts,
                       keyword_init: true)
 
+  # A pass that creates cards cannot also link them: the parent's uuid does not
+  # exist until its card does. So a first pass that created anything is followed
+  # by a second, which sees the uuids the first one wrote. Converges in two, and
+  # the second pass is a no-op whenever the first created nothing.
   def self.sync(docs_root:, board_file:, board_name:)
+    first = pass(docs_root: docs_root, board_file: board_file, board_name: board_name)
+    return first if first.created.zero?
+
+    second = pass(docs_root: docs_root, board_file: board_file, board_name: board_name)
+    Report.new(
+      created: first.created + second.created,
+      updated: first.updated + second.updated,
+      linked: first.linked + second.linked,
+      written: first.written + second.written,
+      orphans: second.orphans,
+      conflicts: (first.conflicts + second.conflicts).uniq
+    )
+  end
+
+  def self.pass(docs_root:, board_file:, board_name:)
     api = Kanban.new(board_file)
-    docs = scan_pitches(docs_root)
+    docs = scan_pitches(docs_root) + scan_slices(docs_root)
     cards = api.run("card", "list", "--board", board_name).fetch("items")
     report = Report.new(created: 0, updated: 0, linked: 0, written: 0,
                         orphans: [], conflicts: [])
 
-    reconcile(docs: docs, cards: cards).each do |op|
+    by_path = docs.each_with_object({}) { |d, h| h[d.path] = d.uuid }
+    parents = docs.each_with_object({}) do |d, h|
+      h[d.path] = by_path[d.parent_path] if d.parent_path
+    end
+    edges = docs.select { |d| d.kind == :pitch && d.uuid }.flat_map do |pitch|
+      api.run("relation", "children", pitch.uuid).map { |c| [pitch.uuid, c["id"]] }
+    end
+
+    reconcile(docs: docs, cards: cards, parents: parents, edges: edges).each do |op|
       case op.kind
       when :create
         uuid = api.create_card(
           board: board_name, column: "TODO", title: op.doc.title,
-          status: STATUS_TO_KANBAN.fetch(op.doc.status, "todo"), description: op.doc.path
+          status: STATUS_TO_KANBAN.fetch(op.doc.status, "todo"),
+          description: description_for(op.doc)
         )
         write_back(op.doc, "kanban" => uuid)
         report.created += 1
@@ -121,6 +170,11 @@ module Board
         api.run("card", "update", op.uuid, "--status",
                 STATUS_TO_KANBAN.fetch(op.status, "todo"))
         report.updated += 1
+      when :link
+        # relation add takes POSITIONAL <PARENT> <CHILDREN>... The upstream
+        # README documents --parent/--child; those flags do not exist.
+        api.run("relation", "add", op.parent_uuid, op.uuid)
+        report.linked += 1
       when :orphan   then report.orphans << op.uuid
       when :conflict then report.conflicts << op.paths
       end
@@ -143,10 +197,11 @@ module Board
     from_card.to_s.downcase.delete("_") == want.to_s.downcase.delete("_")
   end
 
-  Op = Struct.new(:kind, :path, :paths, :uuid, :status, :doc, keyword_init: true)
+  Op = Struct.new(:kind, :path, :paths, :uuid, :parent_uuid, :status, :doc,
+                  keyword_init: true)
 
   # Pure: (docs, cards) -> [Op]. No IO, no process, no clock.
-  def self.reconcile(docs:, cards:)
+  def self.reconcile(docs:, cards:, parents: {}, edges: [])
     by_id = cards.each_with_object({}) { |c, h| h[c["id"]] = c }
     claimed = Hash.new { |h, k| h[k] = [] }
     docs.each { |d| claimed[d.uuid] << d.path if d.uuid }
@@ -182,6 +237,16 @@ module Board
       ops << Op.new(kind: :set_status, uuid: d.uuid, status: d.status, path: d.path, doc: d)
     end
 
+    docs.each do |d|
+      next unless d.kind == :slice && d.uuid
+
+      parent_uuid = parents[d.path]
+      next if parent_uuid.nil?
+      next if edges.include?([parent_uuid, d.uuid])
+
+      ops << Op.new(kind: :link, uuid: d.uuid, parent_uuid: parent_uuid, path: d.path)
+    end
+
     linked = docs.map(&:uuid).compact
     cards.reject { |c| linked.include?(c["id"]) }
          .each { |c| ops << Op.new(kind: :orphan, uuid: c["id"]) }
@@ -196,7 +261,7 @@ if $PROGRAM_NAME == __FILE__
 
   begin
     r = Board.sync(docs_root: docs_root, board_file: board_file, board_name: board_name)
-    puts "#{r.created} created, #{r.updated} updated"
+    puts "#{r.created} created, #{r.updated} updated, #{r.linked} linked"
     r.orphans.each   { |u| warn "orphan card (not deleted): #{u}" }
     r.conflicts.each { |ps| warn "conflict: #{ps.join(' and ')} claim the same card" }
     exit(r.conflicts.empty? ? 0 : 1)

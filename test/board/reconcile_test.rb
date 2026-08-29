@@ -59,3 +59,31 @@ class ReconcileTest < Minitest::Test
     assert_equal "a.md", ops.first.path
   end
 end
+
+class LinkTest < Minitest::Test
+  def slice(uuid:)
+    Board::Doc.new(path: "s.md", kind: :slice, title: "S", status: "todo",
+                   uuid: uuid, body: "", data: {}, parent_path: "p.md")
+  end
+
+  def test_links_a_child_to_its_parent_when_the_edge_is_missing
+    ops = Board.reconcile(
+      docs: [slice(uuid: "child")],
+      cards: [{ "id" => "child", "status" => "Todo" }],
+      parents: { "s.md" => "parent" }, edges: []
+    )
+    link = ops.find { |o| o.kind == :link }
+    refute_nil link
+    assert_equal "parent", link.parent_uuid
+    assert_equal "child", link.uuid
+  end
+
+  def test_does_not_relink_an_edge_that_already_exists
+    ops = Board.reconcile(
+      docs: [slice(uuid: "child")],
+      cards: [{ "id" => "child", "status" => "Todo" }],
+      parents: { "s.md" => "parent" }, edges: [%w[parent child]]
+    )
+    assert_nil ops.find { |o| o.kind == :link }
+  end
+end
