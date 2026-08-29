@@ -87,3 +87,33 @@ class LinkTest < Minitest::Test
     assert_nil ops.find { |o| o.kind == :link }
   end
 end
+
+class DirectionTest < Minitest::Test
+  def doc_at(time, status)
+    Board::Doc.new(path: "a.md", kind: :pitch, title: "T", status: status,
+                   uuid: "u1", body: "", data: {}, mtime: time)
+  end
+
+  def card_at(time, status)
+    { "id" => "u1", "status" => status, "updated_at" => time.utc.iso8601 }
+  end
+
+  def test_a_newer_card_writes_the_file
+    ops = Board.reconcile(docs: [doc_at(Time.at(1000), "todo")],
+                          cards: [card_at(Time.at(2000), "InProgress")])
+    assert_equal [:write_file], ops.map(&:kind)
+    assert_equal "doing", ops.first.status
+  end
+
+  def test_a_newer_file_moves_the_card
+    ops = Board.reconcile(docs: [doc_at(Time.at(2000), "done")],
+                          cards: [card_at(Time.at(1000), "Todo")])
+    assert_equal [:set_status], ops.map(&:kind)
+  end
+
+  def test_a_tie_prefers_the_file
+    ops = Board.reconcile(docs: [doc_at(Time.at(1000), "done")],
+                          cards: [card_at(Time.at(1000), "Todo")])
+    assert_equal [:set_status], ops.map(&:kind)
+  end
+end

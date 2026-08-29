@@ -24,6 +24,7 @@
 
 require "yaml"
 require "json"
+require "time"
 
 module Board
   module Frontmatter
@@ -45,12 +46,12 @@ module Board
     end
   end
 
-  Doc = Struct.new(:path, :kind, :title, :status, :uuid, :body, :data, :parent_path,
+  Doc = Struct.new(:path, :kind, :title, :status, :uuid, :body, :data, :parent_path, :mtime,
                    keyword_init: true) do
-    def self.from(path:, text:, kind:, parent_path: nil)
+    def self.from(path:, text:, kind:, parent_path: nil, mtime: nil)
       data, body = Frontmatter.parse(text)
       heading = body[/^\#\s+(.+)$/, 1]
-      new(path: path, kind: kind, body: body, data: data, parent_path: parent_path,
+      new(path: path, kind: kind, body: body, data: data, parent_path: parent_path, mtime: mtime,
           title: heading || File.basename(path, ".md"),
           status: data["status"] || (kind == :slice ? "todo" : nil),
           uuid: data["kanban"])
@@ -66,7 +67,7 @@ module Board
       feature = File.basename(File.dirname(path))
       pitch = File.join(root, "pitches", "#{feature}.md")
       Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :slice,
-               parent_path: (File.exist?(pitch) ? pitch : nil))
+               parent_path: (File.exist?(pitch) ? pitch : nil), mtime: File.mtime(path))
     end
   end
 
@@ -78,9 +79,13 @@ module Board
 
   def self.scan_pitches(root)
     Dir.glob(File.join(root, "pitches", "*.md")).sort.map do |path|
-      Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :pitch)
+      Doc.from(path: path, text: File.read(path, encoding: "UTF-8"), kind: :pitch,
+               mtime: File.mtime(path))
     end
   end
+  KANBAN_TO_STATUS = { "todo" => "todo", "in_progress" => "doing",
+                       "blocked" => "blocked", "done" => "done" }.freeze
+
   STATUS_TO_KANBAN = {
     "todo" => "todo", "doing" => "in_progress",
     "blocked" => "blocked", "done" => "done",
@@ -170,6 +175,9 @@ module Board
         api.run("card", "update", op.uuid, "--status",
                 STATUS_TO_KANBAN.fetch(op.status, "todo"))
         report.updated += 1
+      when :write_file
+        write_back(op.doc, "status" => op.status)
+        report.written += 1
       when :link
         # relation add takes POSITIONAL <PARENT> <CHILDREN>... The upstream
         # README documents --parent/--child; those flags do not exist.
@@ -189,12 +197,20 @@ module Board
     File.write(doc.path, Frontmatter.render(data, doc.body))
   end
 
-  # `card list` returns TitleCase with no separator ("InProgress"); `card get`
-  # and the REST API return snake_case ("in_progress"). Downcasing alone is not
-  # enough -- "inprogress" != "in_progress" -- and getting that wrong makes
-  # every linked card look changed on every run. The underscore has to go too.
-  def self.same_status?(from_card, want)
-    from_card.to_s.downcase.delete("_") == want.to_s.downcase.delete("_")
+  # One place that knows kanban writes its statuses two ways: `card list`
+  # returns TitleCase with no separator ("InProgress") while `card get` and the
+  # REST API return snake_case ("in_progress"). Downcasing alone is not enough
+  # -- "inprogress" != "in_progress" -- and getting it wrong made every linked
+  # card look changed on every run. Strip the separator, then look it up.
+  CANONICAL_STATUS = { "todo" => "todo", "inprogress" => "in_progress",
+                       "blocked" => "blocked", "done" => "done" }.freeze
+
+  def self.canonical_status(raw)
+    CANONICAL_STATUS.fetch(raw.to_s.downcase.delete("_"), "todo")
+  end
+
+  def self.same_status?(one, other)
+    canonical_status(one) == canonical_status(other)
   end
 
   Op = Struct.new(:kind, :path, :paths, :uuid, :parent_uuid, :status, :doc,
@@ -234,7 +250,21 @@ module Board
       want = STATUS_TO_KANBAN.fetch(d.status, "todo")
       next if same_status?(card["status"], want)
 
-      ops << Op.new(kind: :set_status, uuid: d.uuid, status: d.status, path: d.path, doc: d)
+      card_time = begin
+        Time.iso8601(card["updated_at"].to_s)
+      rescue ArgumentError, TypeError
+        Time.at(0) # an unparseable timestamp must not silently beat the file
+      end
+
+      # The tie goes to the file, deliberately: markdown is the source of truth,
+      # so when the evidence is ambiguous the tool yields. A write_file op also
+      # changes the mtime, which is what stops the next run flapping back.
+      if d.mtime && card_time > d.mtime
+        ops << Op.new(kind: :write_file, uuid: d.uuid, path: d.path, doc: d,
+                      status: KANBAN_TO_STATUS.fetch(canonical_status(card["status"]), "todo"))
+      else
+        ops << Op.new(kind: :set_status, uuid: d.uuid, status: d.status, path: d.path, doc: d)
+      end
     end
 
     docs.each do |d|
@@ -261,7 +291,7 @@ if $PROGRAM_NAME == __FILE__
 
   begin
     r = Board.sync(docs_root: docs_root, board_file: board_file, board_name: board_name)
-    puts "#{r.created} created, #{r.updated} updated, #{r.linked} linked"
+    puts "#{r.created} created, #{r.updated} updated, #{r.written} written, #{r.linked} linked"
     r.orphans.each   { |u| warn "orphan card (not deleted): #{u}" }
     r.conflicts.each { |ps| warn "conflict: #{ps.join(' and ')} claim the same card" }
     exit(r.conflicts.empty? ? 0 : 1)
