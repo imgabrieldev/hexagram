@@ -33,6 +33,9 @@ ruby "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.rb" --init docs .kanban.json Work 
 
 Creates `.kanban.json` and seeds TODO / Doing / Complete, with the card prefix set **in the same call**.
 
+Cards are created in the column whose `default_status` matches, so the first sync already looks like a
+board rather than one long TODO list.
+
 ⚠️ **Add `.kanban.json` to `.gitignore`.** It is derived, so losing it costs one command — and a
 tracked JSON board is a merge conflict waiting to happen. `/hexagram:init-project` writes this line
 already.
@@ -43,7 +46,7 @@ already.
 ruby "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.rb" docs .kanban.json Work
 ```
 
-Reports `N created, N updated, N written, N linked`.
+Reports `N created, N updated, N moved, N written, N linked`.
 
 ### What becomes a card
 
@@ -57,6 +60,7 @@ Reports `N created, N updated, N written, N linked`.
 |---|---|
 | creates a card | a document has no `kanban:` key, **or** points at a card that no longer exists |
 | moves a card | the file's `status:` changed and the file is newer |
+| moves a card **between columns** | the card's column disagrees with its status. In kanban these are separate: setting a status does not place the card, and a board where everything sits in TODO is not a board. **A column with no `default_status` is left alone** — that is somewhere a human parked the card deliberately |
 | writes the file | the card moved and the card is newer |
 | links | a slice card is not yet a child of its pitch card |
 

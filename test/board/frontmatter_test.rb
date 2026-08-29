@@ -19,17 +19,21 @@ class FrontmatterTest < Minitest::Test
     assert_equal text, body
   end
 
-  def test_round_trip_is_identity
-    data, body = Board::Frontmatter.parse(WITH)
-    again_data, again_body = Board::Frontmatter.parse(Board::Frontmatter.render(data, body))
-    assert_equal data, again_data
+  # `set` writes; `parse` reads. The property that matters is that a write is
+  # visible to the reader and costs the body nothing.
+  def test_set_is_visible_to_parse_and_leaves_the_body_alone
+    _, body = Board::Frontmatter.parse(WITH)
+    data, again_body = Board::Frontmatter.parse(Board::Frontmatter.set(WITH, "kanban", "u-1"))
+
+    assert_equal({ "tags" => ["pitch"], "status" => "active", "kanban" => "u-1" }, data)
     assert_equal body, again_body
   end
 
-  def test_render_onto_a_bare_file_keeps_the_body
+  def test_set_onto_a_bare_file_keeps_the_body
     text = "# Just a slice\n\nprose\n"
-    out = Board::Frontmatter.render({ "status" => "todo", "kanban" => "u-1" }, text)
+    out = Board::Frontmatter.set(Board::Frontmatter.set(text, "status", "todo"), "kanban", "u-1")
     data, body = Board::Frontmatter.parse(out)
+
     assert_equal({ "status" => "todo", "kanban" => "u-1" }, data)
     assert_equal text, body
   end

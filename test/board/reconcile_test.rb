@@ -131,3 +131,49 @@ class DirectionTest < Minitest::Test
     assert_equal [:set_status], ops.map(&:kind)
   end
 end
+
+class ColumnPlacementTest < Minitest::Test
+  COLUMNS = [{ "id" => "c-todo", "name" => "TODO", "default_status" => "todo" },
+             { "id" => "c-doing", "name" => "Doing", "default_status" => "in_progress" },
+             { "id" => "c-done", "name" => "Complete", "default_status" => "done" },
+             { "id" => "c-review", "name" => "In Review", "default_status" => nil }].freeze
+
+  def doc(status)
+    Board::Doc.new(path: "a.md", kind: :pitch, title: "T", status: status,
+                   uuid: "u1", body: "", data: {}, mtime: Time.at(9999))
+  end
+
+  def card(status, column)
+    { "id" => "u1", "status" => status, "column_id" => column,
+      "updated_at" => "1970-01-01T00:00:00Z" }
+  end
+
+  def test_a_card_in_a_column_that_disagrees_is_moved
+    ops = Board.reconcile(docs: [doc("doing")], cards: [card("InProgress", "c-todo")],
+                          columns: COLUMNS)
+    move = ops.find { |o| o.kind == :move }
+    refute_nil move
+    assert_equal "c-doing", move.column_id
+  end
+
+  def test_a_card_already_in_the_right_column_is_left_alone
+    ops = Board.reconcile(docs: [doc("doing")], cards: [card("InProgress", "c-doing")],
+                          columns: COLUMNS)
+    assert_nil ops.find { |o| o.kind == :move }
+  end
+
+  # A column with no default_status is a deliberate choice -- "In Review" is
+  # somewhere a human parked the card. Dragging it out because its status maps
+  # elsewhere would be the tool fighting its user.
+  def test_a_card_in_a_column_with_no_default_status_stays_put
+    ops = Board.reconcile(docs: [doc("doing")], cards: [card("InProgress", "c-review")],
+                          columns: COLUMNS)
+    assert_nil ops.find { |o| o.kind == :move }
+  end
+
+  def test_no_matching_column_means_no_move
+    ops = Board.reconcile(docs: [doc("blocked")], cards: [card("Blocked", "c-todo")],
+                          columns: COLUMNS)
+    assert_nil ops.find { |o| o.kind == :move }
+  end
+end
