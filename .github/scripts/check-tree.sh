@@ -150,8 +150,8 @@ echo "::endgroup::"
 # TWO TRAPS, both hit while writing this, both silent:
 #
 #   * A card identifier and an encoding name are the same shape. `[A-Z]{2,}-[0-9]+`
-#     matches UTF-8 and ASCII-8BIT, and both appear in skills/board/sync.rb
-#     because the UTF-8 read is itself a mandatory rule. Full-line comments are
+#     matches UTF-8 and ASCII-8BIT, and encoding names appear in skills/board
+#     because reading as UTF-8 is itself a rule there. Full-line comments are
 #     stripped first, and the encoding tokens are excluded BY NAME, not by shape.
 #   * `git grep -E` does NOT support `\b`. POSIX ERE has no word boundary, so a
 #     pattern that works in `grep -E` on a Mac matches NOTHING under git grep --
