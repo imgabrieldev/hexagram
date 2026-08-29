@@ -140,7 +140,7 @@ The guide leaves the mechanism open — *"any way that Kanban system members dee
 is a default, not a law:
 
 ```bash
-kanban .kanban.json column update <column-id> --clear-wip-limit
+kanban .kanban.json column update "$COLUMN_ID" --clear-wip-limit
 ```
 
 ⚠️ **It is set at `--init` and never by the sync**, so a limit you changed later is never quietly
