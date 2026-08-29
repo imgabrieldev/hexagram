@@ -23,12 +23,15 @@ the loop does not depend on it.**
 cargo install kanban-cli kanban-mcp
 ```
 
+That is the only one. The sync is stdlib Python 3 and targets the interpreter that ships with the OS
+(3.9 on macOS), so there is nothing to install for it.
+
 If `kanban` is not on `PATH`, every entry point here exits non-zero, says this, and **changes no file**.
 
 ## First run
 
 ```bash
-ruby "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.rb" --init docs .kanban.json Work HEX
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.py" --init docs .kanban.json Work HEX
 ```
 
 Creates `.kanban.json` and seeds TODO / Doing / Complete, with the card prefix set **in the same call**.
@@ -43,7 +46,7 @@ already.
 ## Every run after
 
 ```bash
-ruby "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.rb" docs .kanban.json Work
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/sync.py" docs .kanban.json Work
 ```
 
 Reports `N created, N updated, N moved, N written, N linked`.

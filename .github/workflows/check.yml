@@ -78,6 +78,14 @@ jobs:
       - name: Tree — JSON, gitignore, manifest wiring, shellcheck
         run: bash .github/scripts/check-tree.sh
 
+      # The board sync is the only skill that ships executable logic, so it is
+      # the only one with a suite. Stdlib python3, preinstalled here, and the
+      # tests that need the `kanban` binary skip themselves when it is absent —
+      # which it is on the runner. That keeps this in `lint` rather than in the
+      # job that is allowed to flake.
+      - name: Board — sync unit tests
+        run: python3 test/run.py
+
       # This file is the one thing the checks above never read, and a broken workflow does not
       # report a broken workflow — it just stops running. Parse every one of them.
       - name: Workflows parse
