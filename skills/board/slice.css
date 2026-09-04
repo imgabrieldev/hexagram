@@ -1,0 +1,38 @@
+/* One slice document. The acceptance leads and is marked; the escape hatch is
+   a disclosure; everything else is a plain block in the document's own order. */
+.blk { max-width: 78ch; margin: 16px 22px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 11px; padding: 14px 17px 16px;
+  box-shadow: var(--shadow); }
+.blk > h2 { margin: 0; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--muted); font-weight: 700; }
+.blk > .note { margin: 1px 0 12px; color: var(--faint); font-size: 12px; }
+.blk > h2 + *, .blk > .note + * { margin-top: 0; }
+.blk > :last-child { margin-bottom: 0; }
+.blk.lead { border-color: var(--accent); background:
+  linear-gradient(var(--accent-soft), var(--panel) 60px); }
+.blk.lead > h2 { color: var(--accent); }
+.blk.warn { border-color: var(--warn-line); background: var(--warn-bg); }
+.blk.warn > h2 { color: var(--warn-ink); }
+.blk.warn pre { background: var(--panel); }
+details.blk > summary { cursor: pointer; list-style: none; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted);
+  font-weight: 700; }
+details.blk > summary::-webkit-details-marker { display: none; }
+details.blk > summary:before { content: "+ "; }
+details.blk[open] > summary:before { content: "\2212 "; }
+details.blk[open] > summary { margin-bottom: 12px; }
+
+p { margin: 0 0 11px; }
+p.warn { background: var(--warn-bg); border: 1px solid var(--warn-line);
+  color: var(--warn-ink); border-radius: 8px; padding: 9px 12px; }
+h3, h4 { font-size: 14px; margin: 18px 0 7px; letter-spacing: -0.005em; }
+ul, ol { margin: 0 0 11px; padding-left: 21px; }
+li { margin-bottom: 4px; }
+li > ul, li > ol { margin: 4px 0 0; }
+blockquote { margin: 0 0 11px; padding: 2px 0 2px 13px; color: var(--muted);
+  border-left: 3px solid var(--line-strong); font-style: italic; }
+.tag { display: inline-block; margin-top: 10px; font-size: 11px;
+  font-weight: 700; border-radius: 999px; padding: 2px 9px;
+  background: var(--sunk); color: var(--muted); }
+.tag.blocked { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.doing { background: var(--accent-soft); color: var(--accent); }

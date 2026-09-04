@@ -54,15 +54,24 @@ def identifier(prefix, card):
     return "{}-{}".format(prefix, number) if prefix else str(number)
 
 
+def split_epic(title):
+    """``[checkout] Slice 2 — Rate limiting`` -> ``("checkout", "Slice 2 — …")``.
+
+    The epic is a [label] the sync put at the front of the title, because a pitch
+    is a grouping rather than work and never becomes a card of its own. Every
+    renderer needs it apart from the title, so the rule lives in one place.
+    """
+    if title.startswith("[") and "] " in title:
+        end = title.index("] ")
+        return title[1:end], title[end + 2:]
+    return "", title
+
+
 def card_box(card, width, prefix):
     inner = width - 4
-    # The epic, if the card has one, is a [label] the sync put at the front of the
-    # title. It moves to the header line beside the identifier, where it groups by
+    # The epic moves to the header line beside the identifier, where it groups by
     # eye without eating the title's first line.
-    title = card["title"]
-    tag = ""
-    if title.startswith("[") and "] " in title:
-        tag, title = title[1:title.index("] ")], title[title.index("] ") + 2:]
+    tag, title = split_epic(card["title"])
     head = identifier(prefix, card).ljust(max(0, inner - len(tag))) + tag[:inner]
 
     # Hexagram titles tend to read "Checkpoint 1 — Scaffold, …". Splitting on the
