@@ -198,6 +198,43 @@ Done when: 429 after N requests
 `git diff` — a renderer that could also write would quietly become the second source of truth this
 skill exists to avoid. A test asserts it never calls a writing subcommand.
 
+## Or in a browser
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/board/web.py" .kanban.json Work board-html
+```
+
+Writes `board-html/index.html` — the same board, for a screen with more room than eighty
+columns — plus **a page for every slice the board names**. Plain files: no server, no CDN, no
+build step, so `open board-html/index.html` works and every link in it resolves.
+
+⚠️ **Add the output directory to `.gitignore`.** It is derived from `.kanban.json`, which is
+derived from the markdown, and a rendered copy of the documents is the third place the same
+truth could rot.
+
+### The slice page
+
+A slice is not free-form markdown. It carries `Delivers`, `Needs`, `Tests`, `Done when` and
+`If stuck` — the sections step 4 of the `workflow` skill produces — so the page is built for
+that shape rather than being a generic document view:
+
+| | |
+|---|---|
+| `Done when` **leads the page**, marked | it is what proves the slice done, and it is what the card already shows |
+| `Design constraint` is a warning block | it is the rule the slice must not break |
+| `If stuck` is a disclosure | it is the escape hatch, not the plan |
+| everything else keeps the document's own order | a slice that does not use these headings carries its substance in its own, and ranking by a fixed list buries that |
+
+⚠️ **The markdown subset is measured, not general.** `markdown.py` renders what these documents
+were found to contain — fences, bullet and numbered lists, tables, blockquotes, bold, inline code
+and links, one level of nesting — and passes anything else through as text. It is not CommonMark
+and does not pretend to be.
+
+⚠️ **A link inside a document is not a reason to fetch an arbitrary scheme.** `http(s)` is kept;
+a relative `.md` becomes the page written for it; anything else keeps its text and loses its link.
+
+**It only draws, on the same terms show.py does**, and the same test holds it there.
+
 `PREFIX-N` appears here and **only** here, for display. Cards are still addressed by uuid everywhere
 else, for the renumbering reason below.
 

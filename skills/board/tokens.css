@@ -1,0 +1,52 @@
+/* The palette both pages share. Light is defined on bare :root and dark only
+   overrides the tokens, so a colour never has its single definition inside a
+   media query — a page opened with no preference still has every value. */
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f3; --panel: #ffffff; --sunk: #edece9; --ink: #171716;
+  --muted: #6e6e68; --faint: #98988f; --line: #e3e2dd; --line-strong: #cfcec7;
+  --accent: #2c6b4c; --accent-soft: #e6efea;
+  --warn-bg: #fbeee2; --warn-ink: #8a4a11; --warn-line: #e9cca6;
+  --todo: #7d8896; --doing: #2c6b4c; --done: #a8bdae;
+  --shadow: 0 1px 2px rgba(20, 20, 18, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131417; --panel: #1c1e22; --sunk: #181a1d; --ink: #eaeae6;
+    --muted: #98988f; --faint: #6c6c65; --line: #292c31; --line-strong: #3a3e45;
+    --accent: #6cbf91; --accent-soft: #1c342a;
+    --warn-bg: #32241a; --warn-ink: #e7b47f; --warn-line: #553c25;
+    --todo: #7b8797; --doing: #6cbf91; --done: #46614f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  }
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); margin: 0;
+  font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; }
+header { padding: 26px 22px 18px; border-bottom: 1px solid var(--line-strong); }
+header h1 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+header .sub { margin: 4px 0 0; color: var(--muted); font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+header .back { display: inline-block; margin-bottom: 10px; font-size: 12.5px;
+  font-weight: 600; color: var(--muted); text-decoration: none; }
+header .back:hover { color: var(--accent); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.87em; background: var(--sunk); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0.5px 4px; }
+pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 7px;
+  padding: 9px 11px; overflow-x: auto; white-space: pre-wrap;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre code { background: none; border: 0; padding: 0; }
+.scrollx { overflow-x: auto; }
+.scrollx table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.scrollx th, .scrollx td { text-align: left; padding: 7px 10px;
+  border-bottom: 1px solid var(--line); vertical-align: top; }
+.scrollx th { font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--faint); font-weight: 700; }
+.chip { font-size: 10px; font-weight: 700; border-radius: 999px;
+  padding: 1.5px 8px; background: var(--sunk); color: var(--muted);
+  white-space: nowrap; }
+.chip.warn { background: var(--warn-bg); color: var(--warn-ink); }
+footer { color: var(--faint); font-size: 11.5px; padding: 16px 22px 40px;
+  border-top: 1px solid var(--line); margin-top: 30px; }
